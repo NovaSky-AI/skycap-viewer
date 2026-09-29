@@ -253,8 +253,6 @@ export function pathTokenCounts(doc, path, targets) {
  *   above them, runs through such a copy. A bridged call extends a model
  *   node's tokens and hangs its new messages under it, so it never passes a
  *   re-tokenized copy; these calls were re-rendered.
- * - `unclosed_think`: model nodes whose content opens `<think>` and never
- *   closes it (typically a turn cut off by max_tokens).
  */
 export function renderSigns(doc) {
   const nodes = doc.nodes;
@@ -272,10 +270,7 @@ export function renderSigns(doc) {
       }
     }
   }
-  const unclosed = nodes
-    .filter((n) => n.author === 'model' && typeof n.message?.content === 'string' && n.message.content.includes('<think>') && !n.message.content.includes('</think>'))
-    .map((n) => n.id);
-  return { retokenized, inferred_unbridged: inferred, unclosed_think: unclosed };
+  return { retokenized, inferred_unbridged: inferred };
 }
 
 /** A trajectory's one-row summary for listings. Reads only the document. */

@@ -22,7 +22,7 @@
  * off the right edge), and each node carries what the record says about how
  * its prompt was made -- `unbridged` (bridged=false), the inferred re-render
  * for records without the field, a re-tokenized copy of a model turn, a
- * shadowed sibling, an unclosed <think>.
+ * shadowed sibling.
  */
 
 import { h, mount } from '../lib/dom.mjs';
@@ -106,7 +106,6 @@ function signBadges(node) {
   if (s.inferred_unbridged) out.push(h('span', { class: 'badge warn', title: 'no bridged field in this record; its prompt runs through a re-tokenized copy of a model turn, so it was re-rendered' }, 'unbridged (inferred)'));
   if (s.retokenized) out.push(h('span', { class: 'badge warn', title: 'the same message as a model sibling, tokenized differently: the prompt was re-rendered' }, `re-tokenized copy of ${node.shadowed_by}`));
   else if (node.shadowed_by) out.push(h('span', { class: 'badge', title: 'a sibling with the same match hash, which history matching prefers' }, `shadowed by ${node.shadowed_by}`));
-  if (s.unclosed_think) out.push(h('span', { class: 'badge warn', title: 'opens <think> and never closes it' }, 'unclosed think'));
   if ((node.calls || []).length > 1) out.push(h('span', { class: 'badge', title: 'identical outputs, one node' }, `×${node.calls.length} calls`));
   return out;
 }

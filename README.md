@@ -43,7 +43,6 @@ The page polls every 5 s. The server rescans the directory and rereads only docu
   - `unbridged (inferred)`
   - `re-tokenized copy of nX`
   - `shadowed by nX`
-  - `unclosed think`
   - the calls, with `bridged`, on an opened node
 - **Forks:** pick two paths. It names the last node they agree on, folds everything before it, and puts the rest side by side. It also runs the train-once check.
 - **Calls:** every call behind every model node, and the record's failures.
@@ -74,7 +73,6 @@ The fifth kind exists because both alternatives are wrong. Calling these tokens 
 | `no-train` | warn | a token-mode path with no trained tokens |
 | `empty` | warn | no nodes (no successful call) |
 | `truncated` | warn | a call with `finish_reason: length` |
-| `unclosed-think` | warn | a model turn that opens `<think>` and never closes it |
 | `abandoned` | info | `status: abandoned` (idle past the TTL) |
 | `forked` | info | more than one path |
 | `bridged-unknown` | info | calls with no `bridged` field (records written before it existed). It is left off the table's rows, where it would be true of every row, and stays in the band and the drawer. |

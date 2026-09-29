@@ -148,7 +148,7 @@ test('a path with nothing in it gets a strip that says so', () => {
 // -- diagnosis ---------------------------------------------------------------
 test('the flags a skycap record can show', () => {
   const flags = (id) => summarise(payload[id].paths, payload[id].trajectory).flags;
-  assert.deepEqual(flags('tr_21ffd62fd84bd796'), ['unbridged-inferred', 'replayed', 'unclosed-think', 'forked', 'bridged-unknown']);
+  assert.deepEqual(flags('tr_21ffd62fd84bd796'), ['unbridged-inferred', 'replayed', 'forked', 'bridged-unknown']);
   assert.deepEqual(flags('tr_2759680d072b0773'), ['bridged-unknown']);
   assert.deepEqual(flags('tr_6b677d3638051778'), ['empty']);
   assert.deepEqual(flags('tr_forked_unbridged'), ['unbridged', 'replayed', 'forked']);
@@ -227,7 +227,6 @@ test('the tree says how a node\'s prompt was made', () => {
   renderTree(root, { graph: forked().graph, paths: forked().paths, state: STATE, onState() {} });
   assert.match(root.textContent, /re-tokenized copy of n1/);
   assert.match(root.textContent, /unbridged \(inferred\)/);
-  assert.match(root.textContent, /unclosed think/);
   root = el();
   const { graph, paths } = payload.tr_forked_unbridged;
   renderTree(root, { graph, paths, state: { ...STATE, openNode: 'n4' }, onState() {} });

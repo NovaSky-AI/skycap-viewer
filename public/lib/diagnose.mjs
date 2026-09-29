@@ -21,7 +21,6 @@ const FLAGS = {
   'no-train': { level: 'warn', why: 'a path that trains nothing: its export row would be empty' },
   empty: { level: 'warn', why: 'no successful call was recorded: no nodes, no paths' },
   truncated: { level: 'warn', why: 'generation stopped on the token budget (finish_reason length), not on the model' },
-  'unclosed-think': { level: 'warn', why: 'a model turn opens <think> and never closes it' },
   abandoned: { level: 'info', why: 'the trajectory went idle past the TTL and was sealed without a finish' },
   forked: { level: 'info', why: 'more than one root-to-leaf path: the history diverged' },
   'bridged-unknown': { level: 'info', why: 'written before calls recorded bridged: whether each call extended the previous tokens is unknown' },
@@ -40,7 +39,6 @@ export function summarise(paths, trajectory) {
   if (sky.bridged?.false > 0) flags.add('unbridged');
   if (sky.inferred_unbridged?.length) flags.add('unbridged-inferred');
   if (sky.truncated_nodes?.length) flags.add('truncated');
-  if (sky.unclosed_think?.length) flags.add('unclosed-think');
   if (trajectory?.status === 'abandoned') flags.add('abandoned');
   if (sky.bridged?.absent > 0) flags.add('bridged-unknown');
 

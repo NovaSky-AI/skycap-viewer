@@ -26,8 +26,6 @@ export function directoryStats(rows, errors = []) {
     with_retokenized: 0,
     inferred_unbridged: 0,
     with_inferred_unbridged: 0,
-    unclosed_think: 0,
-    with_unclosed_think: 0,
     failures: 0,
     with_failures: 0,
     retries: { replayed: 0, coalesced: 0 },
@@ -56,8 +54,6 @@ export function directoryStats(rows, errors = []) {
     if (r.retokenized.length) s.with_retokenized++;
     s.inferred_unbridged += r.inferred_unbridged.length;
     if (r.inferred_unbridged.length) s.with_inferred_unbridged++;
-    s.unclosed_think += r.unclosed_think.length;
-    if (r.unclosed_think.length) s.with_unclosed_think++;
     s.failures += r.failures;
     if (r.failures) s.with_failures++;
     s.retries.replayed += r.retries?.replayed ?? 0;
@@ -108,7 +104,6 @@ export function formatStats(dir, s) {
   if (s.with_bridged_absent) add('bridged field absent', `${s.with_bridged_absent} trajectories (written before the field existed: unknown)`);
   add('shadowed nodes', s.shadowed_nodes);
   add('re-render signs', `${s.retokenized_copies} re-tokenized copies of a model node (in ${s.with_retokenized}); ${s.inferred_unbridged} model calls inferred unbridged (in ${s.with_inferred_unbridged})`);
-  add('unclosed <think>', `${s.unclosed_think} model turns in ${s.with_unclosed_think} trajectories`);
   add('failures', `${s.failures} in ${s.with_failures} trajectories`);
   add('retries', `replayed=${s.retries.replayed} coalesced=${s.retries.coalesced}`);
   if (s.reward) {

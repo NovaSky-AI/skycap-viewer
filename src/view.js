@@ -98,7 +98,6 @@ export function trajectoryOf(doc, { run = null, project = null, revision = null 
       unbridged_nodes: unbridged.map(nodeKey),
       inferred_unbridged: bridged.absent ? signs.inferred_unbridged.map(nodeKey) : [],
       retokenized: signs.retokenized.map(nodeKey),
-      unclosed_think: signs.unclosed_think.map(nodeKey),
       truncated_nodes: truncated.map(nodeKey),
       shadowed: doc.nodes.filter((n) => n.shadowed_by != null).length,
       failures: (doc.failures ?? []).length,
@@ -219,7 +218,6 @@ export function graphPayload(doc) {
   const absent = doc.nodes.some((n) => (n.calls ?? []).some((c) => bridgedState(c) === 'absent'));
   const inferred = new Set(absent ? signs.inferred_unbridged : []);
   const retokenized = new Set(signs.retokenized);
-  const unclosed = new Set(signs.unclosed_think);
   return {
     trajectory: doc.id,
     nodes: doc.nodes.map((n) => {
@@ -245,7 +243,6 @@ export function graphPayload(doc) {
           unbridged: calls.some((c) => c.bridged === false),
           inferred_unbridged: inferred.has(n.id),
           retokenized: retokenized.has(n.id),
-          unclosed_think: unclosed.has(n.id),
         },
         message: n.message,
       };

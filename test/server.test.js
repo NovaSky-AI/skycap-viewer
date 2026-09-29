@@ -86,7 +86,7 @@ test('the list is flat and filtered on the server, with health over the filtered
 test('a row carries its flags and its first path as a strip, from the document alone', async () => {
   const { data } = await json('/v1/trajectories?run_id=real');
   const row = data.find((r) => r.id === 'tr_21ffd62fd84bd796');
-  assert.deepEqual(row.summary.flags, ['unbridged-inferred', 'replayed', 'unclosed-think', 'forked', 'bridged-unknown']);
+  assert.deepEqual(row.summary.flags, ['unbridged-inferred', 'replayed', 'forked', 'bridged-unknown']);
   assert.equal(row.summary.strip.reduce((s, b) => s + b.token_count, 0), expected.tr_21ffd62fd84bd796.paths[0].tokens);
   assert.equal(row.task_id, 'code_contests-0000');
   assert.equal(typeof row.step, 'number');
