@@ -13,7 +13,9 @@ import { check, documentPath, listIds, readDocument, readSidecar, zstdFrames } f
 import { createViewer } from '../src/server.js';
 
 const USAGE = `usage:
-  skycap-viewer <dir>... [--port N] [--host H] [--quiet]   (a dir is a record dir, or a parent of record dirs)
+  skycap-viewer <dir>... [--port N] [--host H] [--group-by k1,k2] [--quiet]
+      a dir is a record dir, or a parent of record dirs; --group-by names the meta or
+      annotation keys that make a GRPO group (default step,instance_id)
   skycap-viewer summary <record-dir>... [--json]
   skycap-viewer check <record-dir>... [--sidecars] [--limit N]`;
 
@@ -42,6 +44,7 @@ try {
       sidecars: { type: 'boolean', default: false },
       limit: { type: 'string', default: '20' },
       quiet: { type: 'boolean', default: false },
+      'group-by': { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -104,7 +107,8 @@ if (command === 'summary') {
 } else {
   const roots = dirs(positionals);
   const port = Number(values.port);
-  const { server, runs } = createViewer(roots, { log: values.quiet ? () => {} : (line) => console.log(line) });
+  const groupBy = values['group-by'] ? values['group-by'].split(',').map((k) => k.trim()).filter(Boolean) : undefined;
+  const { server, runs } = createViewer(roots, { groupBy, log: values.quiet ? () => {} : (line) => console.log(line) });
   if (!runs.runs.size) console.log(`no skycap records under ${roots.join(', ')} yet; they appear on refresh`);
   server.listen(port, values.host, async () => {
     const { port: bound } = server.address();

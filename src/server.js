@@ -21,7 +21,9 @@ import { fileURLToPath } from 'node:url';
 import { Runs } from './runs.js';
 import { documentPath, readDocumentAsync, readSidecar } from './record.js';
 import { exchangesOf, graphPayload, pathsOf, trajectoryOf } from './view.js';
-import { runHealth } from '../public/lib/diagnose.mjs';
+import { FLAG_NAMES, runHealth } from '../public/lib/diagnose.mjs';
+import { comparator, groupSortValue, rewardRange, rowSortValue, sortOf } from './sorting.js';
+import { DEFAULT_GROUP_BY, GROUP_FLAGS, groupHealth, groupRows, summariseGroup } from './groups.js';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
 const TYPES = {
@@ -59,8 +61,8 @@ class HttpError extends Error {
   }
 }
 
-export function createViewer(roots, { log = () => {} } = {}) {
-  const runs = new Runs(Array.isArray(roots) ? roots : [roots]);
+export function createViewer(roots, { log = () => {}, groupBy = DEFAULT_GROUP_BY } = {}) {
+  const runs = new Runs(Array.isArray(roots) ? roots : [roots], { groupBy });
   const docs = new Lru(16);
   const sidecars = new Lru(6);
 
@@ -110,7 +112,7 @@ export function createViewer(roots, { log = () => {} } = {}) {
     return { data };
   }
 
-  async function listing(params) {
+  async function runRows(params) {
     const runId = params.get('run_id');
     const selected = runId ? [runs.get(runId)] : [...runs.runs.values()];
     if (runId && !selected[0]) throw new HttpError(404, `unknown run ${runId}`);
@@ -122,6 +124,11 @@ export function createViewer(roots, { log = () => {} } = {}) {
       const { rows: part } = await run.index.summaries();
       rows = rows.concat(part);
     }
+    return { rows, selected };
+  }
+
+  /** The rollout filters (everything but `flag`). */
+  function filterRows(rows, params) {
     const step = params.get('step');
     const task = params.get('task_id');
     const status = params.get('status');
@@ -130,17 +137,27 @@ export function createViewer(roots, { log = () => {} } = {}) {
       const at = pair.indexOf('=');
       return at < 0 ? [pair, null] : [pair.slice(0, at), pair.slice(at + 1)];
     });
-    rows = rows.filter((r) =>
+    return rows.filter((r) =>
       (step == null || step === '' || String(r.step) === step) &&
       (!task || r.task_id === task) &&
       (!status || r.status === status) &&
       annotations.every(([k, v]) => (v === null ? k in (r.annotations ?? {}) : String(r.annotations?.[k]) === v)) &&
       (!q || JSON.stringify([r.id, r.meta, r.annotations]).toLowerCase().includes(q)));
+  }
+
+  const hasFilter = (params) => ['step', 'task_id', 'status', 'q', 'annotation'].some((k) => params.get(k));
+
+  async function listing(params) {
+    const { rows: all, selected } = await runRows(params);
+    let rows = filterRows(all, params);
     const health = runHealth(rows);
     const flag = params.get('flag');
     if (flag) rows = rows.filter((r) => r.summary?.flags.includes(flag));
     const limit = Math.max(1, Math.min(1000, Number(params.get('limit') ?? 100) || 100));
     const offset = Math.max(0, Number(params.get('cursor') ?? 0) || 0);
+    const sort = sortOf(params);
+    // The index is newest first already; an asked-for sort breaks ties that way too.
+    if (sort) rows = [...rows].sort(comparator(rowSortValue, sort, (a, b) => (b.created_ts ?? 0) - (a.created_ts ?? 0) || (a.id < b.id ? -1 : 1)));
     const page = rows.slice(offset, offset + limit);
     return {
       data: page,
@@ -150,10 +167,89 @@ export function createViewer(roots, { log = () => {} } = {}) {
       indexing: false,
       indexed_trajectories: selected.reduce((s, run) => s + run.index.cache.size, 0),
       health,
+      sort: sort ?? { key: 'created', order: 'desc' },
+      // Over every rollout the filters list, so a colour means the same on every page.
+      reward_range: rewardRange(rows),
+    };
+  }
+
+  const groupKeys = (params) => (params.get('group_by') ? params.get('group_by').split(',').map((k) => k.trim()).filter(Boolean) : runs.groupBy);
+
+  /** Every group of the selected run(s), summarised, and which rollouts the filters match. */
+  async function grouped(params) {
+    const { rows: all } = await runRows(params);
+    const keys = groupKeys(params);
+    const { groups, modal } = groupRows(all, keys);
+    const matching = new Set(filterRows(all, params).map((r) => r.id));
+    const flag = params.get('flag');
+    const flagged = flag && !GROUP_FLAGS.includes(flag) ? new Set(all.filter((r) => r.summary?.flags.includes(flag)).map((r) => r.id)) : null;
+    return { keys, modal, groups, matching, flag, flagged, filtered: hasFilter(params) };
+  }
+
+  const members = (g) => [...g.counting.map((c) => c.row), ...g.superseded.map((s) => s.row)];
+
+  async function groupListing(params) {
+    const { keys, modal, groups, matching, flag, flagged } = await grouped(params);
+    // A group matches the rollout filters if any of its rollouts does.
+    let list = groups.filter((g) => members(g).some((r) => matching.has(r.id))).map((g) => ({ g, s: summariseGroup(g, modal) }));
+    const health = groupHealth(list.map((x) => x.s), FLAG_NAMES);
+    if (flag) {
+      list = GROUP_FLAGS.includes(flag)
+        ? list.filter((x) => x.s.flags.includes(flag))
+        : list.filter((x) => members(x.g).some((r) => flagged.has(r.id) && matching.has(r.id)));
+    }
+    const byDefault = (a, b) => (b.s.step ?? -Infinity) - (a.s.step ?? -Infinity) || String(a.s.task_id).localeCompare(String(b.s.task_id)) || a.s.key.localeCompare(b.s.key);
+    const sort = sortOf(params);
+    list.sort(sort ? comparator((x, key) => groupSortValue(x.s, key), sort, byDefault) : byDefault);
+    const limit = Math.max(1, Math.min(1000, Number(params.get('limit') ?? 100) || 100));
+    const offset = Math.max(0, Number(params.get('cursor') ?? 0) || 0);
+    const page = list.slice(offset, offset + limit).map(({ g, s }) => ({
+      ...s,
+      matching: members(g).filter((r) => matching.has(r.id) && (!flagged || flagged.has(r.id))).length,
+    }));
+    return {
+      data: page,
+      group_by: keys,
+      modal_n: modal,
+      sort: sort ?? { key: 'step', order: 'desc' },
+      // Over the counting rollouts of every listed group: the colour scale for every page and every expanded group.
+      reward_range: rewardRange(list.flatMap((x) => x.g.counting.map((c) => c.row))),
+      next_cursor: offset + limit < list.length ? String(offset + limit) : null,
+      has_more: offset + limit < list.length,
+      total: list.length,
+      indexing: false,
+      health,
+    };
+  }
+
+  async function groupDetail(key, params) {
+    const { keys, modal, groups, matching, flagged, filtered, flag } = await grouped(params);
+    const group = groups.find((g) => g.key === key);
+    if (!group) throw new HttpError(404, `no group ${key} for ${keys.join(',')}`);
+    const byRep = (a, b) => (typeof a.rep === 'number' && typeof b.rep === 'number' ? a.rep - b.rep : String(a.rep).localeCompare(String(b.rep)));
+    // Ranked by reward unless another sort is asked for: the expanded group follows the table's column.
+    const sort = sortOf(params) ?? { key: 'reward', order: 'desc' };
+    const ranked = [...group.counting].sort(comparator((c, key) => rowSortValue(c.row, key), sort, byRep));
+    const isMatch = (r) => matching.has(r.id) && (!flagged || flagged.has(r.id));
+    const emphasise = filtered || Boolean(flag && !GROUP_FLAGS.includes(flag));
+    return {
+      group: summariseGroup(group, modal),
+      sort,
+      reward_range: rewardRange(group.counting.map((c) => c.row)),
+      group_by: keys,
+      // Ranked by reward; each counting rollout carries the attempts it superseded.
+      rollouts: ranked.map(({ row, rep }) => ({
+        ...row,
+        repetition_id: rep,
+        match: emphasise ? isMatch(row) : null,
+        superseded: group.superseded.filter((s) => s.by === row.id).map((s) => ({ ...s.row, repetition_id: rep, superseded_by: row.id, match: emphasise ? isMatch(s.row) : null })),
+      })),
     };
   }
 
   async function api(parts, params) {
+    if (parts[0] === 'groups' && parts.length === 1) return groupListing(params);
+    if (parts[0] === 'groups' && parts.length === 2) return groupDetail(parts[1], params);
     // parts: after /v1
     if (parts[0] === 'runs' && parts.length === 1) return runList(params.get('refresh') === 'true');
     if (parts[0] !== 'trajectories') throw new HttpError(404, 'not found');

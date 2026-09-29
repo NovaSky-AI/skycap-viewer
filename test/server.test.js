@@ -27,7 +27,7 @@ const json = async (path, status = 200) => {
 };
 
 test('a parent directory is discovered as its record directories', () => {
-  assert.deepEqual(discover(FIXTURES).map(runName), ['real', 'spec']);
+  assert.deepEqual(discover(FIXTURES).map(runName), ['groups', 'real', 'spec']);
   assert.deepEqual(discover(`${FIXTURES}/real`).map(runName), ['real']);
   assert.equal(runName('/tmp/harbor/runs/harbor-skycap-7e4d9eb99a09/skycap'), 'harbor-skycap-7e4d9eb99a09');
 });

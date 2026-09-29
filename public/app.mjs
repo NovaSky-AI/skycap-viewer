@@ -1,9 +1,7 @@
 /** The shell: routing, loading, and the run page.
  *
  * Ported from inference-capture's viewer. The route lives in the hash so a
- * link to an attempt is a link anyone can paste. `#/run/<run_id>` and
- * `#/run/<run_id>/<trajectory_id>` are the whole routing table. A run is one
- * skycap record directory.
+ * link is a link anyone can paste. A run is one skycap record directory.
  *
  * What changed from the reference: rows arrive with their flags and mask
  * strip already computed. The reference derived both in the browser, one
@@ -11,6 +9,17 @@
  * server reads the record files itself, so it computes them once per record
  * when it indexes the run -- which also means the health band and the flag
  * filter cover the whole filtered run rather than the page on screen.
+ *
+ * Groups: a GRPO group is the rollouts of one prompt at one step (keyed by
+ * `step` + `instance_id` by default). A run whose records carry the key opens
+ * on its groups; the toggle switches to the flat rollout list. A group row
+ * expands in place, and several can be open at once.
+ *
+ *   #/run/<run>[/groups|/rollouts][/<trajectory>][?sort=&order=&open=<key>,<key>]
+ *   #/run/<run>/group/<key>[/<trajectory>]      that group, expanded and scrolled to
+ *
+ * `sort`/`order` are the table's column sort (server-side, since the lists
+ * are paged); `open` is the expanded groups.
  */
 
 import { h, mount } from './lib/dom.mjs';
@@ -18,6 +27,7 @@ import { api } from './lib/api.mjs';
 import { num, stamp } from './lib/format.mjs';
 import { renderSidebar } from './components/sidebar.mjs';
 import { renderHealth, renderTable } from './components/table.mjs';
+import { renderGroups } from './components/groups.mjs';
 import { Drawer } from './components/drawer.mjs';
 import { rowsSignature, runsSignature } from './lib/changed.mjs';
 
@@ -31,6 +41,17 @@ const PAGE_SIZE = 100;
 const state = {
   runs: [],
   runId: null,
+  // 'groups' or 'rollouts'.
+  view: 'rollouts',
+  // The column sort, or null for the list's default; part of the route.
+  sort: null,
+  // Expanded groups, by key, and what each one's rollouts are.
+  open: new Set(),
+  details: new Map(),
+  // Where to scroll once drawn (a /group/<key> link).
+  scrollTo: null,
+  // The run-wide reward range the listing reports, for the colour scale.
+  range: null,
   filter: '',
   rows: [],
   // The run's filters. Each is a query to the server, never a filter over
@@ -52,8 +73,29 @@ const state = {
   error: null,
 };
 
+function currentRun() {
+  return state.runs.find((candidate) => candidate.id === state.runId);
+}
+
+const defaultView = () => (currentRun()?.groupable ? 'groups' : 'rollouts');
+
+/** The route of what is on the page, optionally with a trajectory open. */
+function pageRoute(trajectoryId = null) {
+  let path = `#/run/${encodeURIComponent(state.runId)}`;
+  if (state.view !== defaultView() || trajectoryId) path += `/${state.view}`;
+  if (trajectoryId) path += `/${encodeURIComponent(trajectoryId)}`;
+  const query = new URLSearchParams();
+  if (state.sort) {
+    query.set('sort', state.sort.key);
+    query.set('order', state.sort.order);
+  }
+  if (state.view === 'groups' && state.open.size) query.set('open', [...state.open].join(','));
+  const text = query.toString();
+  return text ? `${path}?${text}` : path;
+}
+
 drawer.onClose = () => {
-  if (state.runId) setRoute(`#/run/${encodeURIComponent(state.runId)}`, true);
+  if (state.runId) setRoute(pageRoute(), true);
 };
 
 function setRoute(hash, replace = false) {
@@ -63,9 +105,20 @@ function setRoute(hash, replace = false) {
 }
 
 function parseRoute() {
-  const parts = location.hash.replace(/^#\/?/, '').split('/').map((part) => decodeURIComponent(part));
+  const raw = location.hash.replace(/^#\/?/, '');
+  const at = raw.indexOf('?');
+  const path = at < 0 ? raw : raw.slice(0, at);
+  const query = new URLSearchParams(at < 0 ? '' : raw.slice(at + 1));
+  const parts = path.split('/').map((part) => decodeURIComponent(part));
   if (parts[0] !== 'run' || !parts[1]) return {};
-  return { runId: parts[1], trajectoryId: parts[2] || null };
+  const runId = parts[1];
+  const sort = query.get('sort') ? { key: query.get('sort'), order: query.get('order') === 'asc' ? 'asc' : 'desc' } : null;
+  const open = (query.get('open') || '').split(',').filter(Boolean);
+  if (parts[2] === 'group' && parts[3]) {
+    return { runId, view: 'groups', sort, open: [...new Set([...open, parts[3]])], scrollTo: parts[3], trajectoryId: parts[4] || null };
+  }
+  if (parts[2] === 'groups' || parts[2] === 'rollouts') return { runId, view: parts[2], sort, open, trajectoryId: parts[3] || null };
+  return { runId, view: null, sort, open, trajectoryId: parts[2] || null };
 }
 
 /** Where the records are read from, said plainly. */
@@ -113,47 +166,18 @@ function drawSidebar() {
   });
 }
 
-/** How many trajectories sit at a step, from the run summary. */
-function stepCount(run, step) {
-  if (step === null) return run?.trajectory_count ?? 0;
-  return run?.step_counts?.[String(step)] ?? 0;
-}
-
-/** The step picker: a slider, because a run has as many steps as it has
- * training steps and a row of two hundred chips is not a control. The leftmost
- * position is "all". Dragging only re-labels; the fetch waits for the release. */
-function stepSlider(run, steps) {
-  const index = state.step === null ? -1 : steps.indexOf(state.step);
-  const describe = (at) => {
-    const value = at < 0 ? null : steps[at];
-    return value === null
-      ? `all steps · ${num(run?.trajectory_count ?? 0)} trajectories`
-      : `step ${value} · ${num(stepCount(run, value))} trajectories`;
-  };
-  const readout = h('span', { class: 'step-readout mono' }, describe(index));
-  const slider = h('input', {
-    type: 'range',
-    id: 'step-slider',
-    min: '-1',
-    max: String(steps.length - 1),
-    step: '1',
-    value: String(index),
-    'aria-label': 'step',
-    oninput: (event) => {
-      readout.textContent = describe(Number(event.target.value));
-    },
-    onchange: (event) => {
-      const at = Number(event.target.value);
-      refilter({ step: at < 0 ? null : steps[at] });
-    },
-  });
+/** The step filter: one entry per step, with its count, and "all". */
+function stepSelect(run, steps) {
   return h(
-    'div',
-    { class: 'steps' },
+    'label',
+    { class: 'filter' },
     h('span', { class: 'label' }, 'step'),
-    h('button', { class: `chip${state.step === null ? ' on' : ''}`, onclick: () => refilter({ step: null }) }, h('span', { class: 'n' }, 'all')),
-    slider,
-    readout
+    h(
+      'select',
+      { 'aria-label': 'step', onchange: (event) => refilter({ step: event.target.value === '' ? null : Number(event.target.value) }) },
+      h('option', { value: '' }, `all steps (${num(run?.trajectory_count ?? 0)})`),
+      steps.map((step) => h('option', { value: String(step), selected: state.step === step }, `step ${step} (${num(run?.step_counts?.[String(step)] ?? 0)})`))
+    )
   );
 }
 
@@ -161,7 +185,7 @@ function stepSlider(run, steps) {
  *
  * `task` is one dimension among whatever a harness annotates, not an axis
  * (design/run-dimensions.md), so it is a filter like the rest. */
-function filterBar(run) {
+function filterBar(run, first = null) {
   const select = (label, value, options, onPick) =>
     h(
       'label',
@@ -181,6 +205,7 @@ function filterBar(run) {
   return h(
     'div',
     { class: 'filters' },
+    first,
     select('task', state.task, (run?.tasks || []).map((task) => [task.id, `${task.id} (${num(task.count)})`]), (task) => refilter({ task })),
     select('status', state.status, Object.entries(run?.statuses || {}).map(([status, count]) => [status, `${status} (${num(count)})`]), (status) => refilter({ status })),
     select('annotation', state.annotation, annotationOptions, (annotation) => refilter({ annotation })),
@@ -236,12 +261,33 @@ function scopeText() {
   return parts.length ? parts.join(' · ') : 'across the run';
 }
 
+/** Groups | Rollouts, when the run's records carry the group key. */
+function viewToggle(run) {
+  if (!run?.groupable) return null;
+  const go = (view) => {
+    if (view === state.view) return;
+    routeWith({ view, sort: null, open: new Set() });
+  };
+  return h(
+    'div',
+    { class: 'view-toggle', role: 'tablist' },
+    h('button', { class: `chip${state.view === 'groups' ? ' on' : ''}`, onclick: () => go('groups'), title: `the rollouts of one prompt at one step, keyed by ${(run.group_by || []).join(' + ')}` }, `groups ${num(run.group_count)}`),
+    h('button', { class: `chip${state.view === 'rollouts' ? ' on' : ''}`, onclick: () => go('rollouts') }, `rollouts ${num(run.trajectory_count)}`)
+  );
+}
+
+const hasFilters = () => state.step !== null || state.task || state.status || state.annotation || state.query;
+
 function drawRun() {
   drawn.rows = rowsSignature(state.rows, state);
-  const run = state.runs.find((candidate) => candidate.id === state.runId);
+  const run = currentRun();
   const steps = run?.steps || [];
   const healthEl = h('div');
   const tableEl = h('div');
+  const unit = state.view === 'groups' ? 'groups' : 'trajectories';
+  // Redrawing replaces #main's children, which would put the reader back at
+  // the top -- expanding a group far down the list must not move the list.
+  const keep = mainEl.scrollTop || 0;
 
   mount(
     mainEl,
@@ -253,20 +299,24 @@ function drawRun() {
         'div',
         { class: 'page-sub' },
         run
-          ? `${num(run.trajectory_count)} trajectories · ${num(run.task_count)} tasks · ` +
+          ? `${num(run.trajectory_count)} trajectories · ${run.groupable ? `${num(run.group_count)} groups of ${num(run.modal_group_size)} · ` : ''}${num(run.task_count)} tasks · ` +
             `steps ${run.steps?.length ? `${run.steps[0]}..${run.steps[run.steps.length - 1]}` : '-'} · ` +
             `${stamp(run.created_at)}${run.upstream?.model ? ` · ${run.upstream.model}` : ''}` +
             `${run.unreadable ? ` · ${num(run.unreadable)} unreadable` : ''}`
           : ''
       ),
       h('div', { class: 'page-sub mono dim', title: 'the record directory' }, run?.path || ''),
+      viewToggle(run),
       // The band counts the whole filtered run, before the flag filter, so a
       // flag's count is how many rows clicking it will list.
-      h('h2', { class: 'section' }, `record health · ${scopeText()}`),
+      h('h2', { class: 'section' }, `record health · ${unit} · ${scopeText()}`),
       healthEl,
-      steps.length > 1 ? stepSlider(run, steps) : null,
-      filterBar(run),
-      h('h2', { class: 'section' }, [`trajectories · ${scopeText()}`, state.flag ? ` · flagged ${state.flag}` : ''].join('')),
+      filterBar(run, steps.length > 1 ? stepSelect(run, steps) : null),
+      h(
+        'h2',
+        { class: 'section' },
+        [`${unit} · ${scopeText()}`, state.flag ? ` · flagged ${state.flag}` : '', state.view === 'groups' && (hasFilters() || state.flag) ? ' · matching rollouts emphasised when expanded' : ''].join('')
+      ),
       pager(),
       tableEl
     )
@@ -277,7 +327,34 @@ function drawRun() {
     active: state.flag,
     onToggle: (flag) => refilter({ flag: state.flag === flag ? null : flag }),
   });
-  renderTable(tableEl, { rows: state.rows, selected: drawer.id, onOpen: openTrajectory });
+  const onSort = (sort) => routeWith({ sort });
+  if (state.view === 'groups') {
+    renderGroups(tableEl, {
+      groups: state.rows,
+      open: state.open,
+      details: state.details,
+      range: state.range,
+      sort: state.sort,
+      onSort,
+      onToggle: toggleGroup,
+      onOpenRollout: openTrajectory,
+      selected: drawer.id,
+    });
+    // A /group/<key> link: bring that group into view once its rollouts are
+    // drawn (drawing them earlier would be undone by the redraw that adds them).
+    const detail = state.scrollTo ? state.details.get(state.scrollTo) : null;
+    if (state.scrollTo && detail && !detail.loading && typeof tableEl.querySelectorAll === 'function') {
+      const target = [...tableEl.querySelectorAll('tr.group-row')].find((tr) => tr.dataset.key === state.scrollTo);
+      state.scrollTo = null;
+      if (target) {
+        target.scrollIntoView({ block: 'start' });
+        return;
+      }
+    }
+  } else {
+    renderTable(tableEl, { rows: state.rows, selected: drawer.id, onOpen: openTrajectory, sort: state.sort, onSort, range: state.range });
+  }
+  if (keep) mainEl.scrollTop = keep;
 }
 
 /** Change a filter and re-query from the first page. */
@@ -288,11 +365,32 @@ function refilter(patch) {
   // A flag is only meaningful within the filter it was counted under.
   if (!('flag' in patch)) state.flag = null;
   state.cursors = [null];
+  // Expanded groups stay open, re-read under the new filters.
+  state.details = new Map();
   loadPage(0);
 }
 
 function openTrajectory(trajectoryId) {
-  setRoute(`#/run/${encodeURIComponent(state.runId)}/${encodeURIComponent(trajectoryId)}`);
+  setRoute(pageRoute(trajectoryId));
+}
+
+/** Go to the page as it would be with `patch` applied. Only the route changes
+ * here: `route` compares it with the state and does the work, so state set
+ * before routing would look like nothing changed. */
+function routeWith(patch, trajectoryId = null) {
+  const saved = Object.fromEntries(Object.keys(patch).map((key) => [key, state[key]]));
+  Object.assign(state, patch);
+  const hash = pageRoute(trajectoryId);
+  Object.assign(state, saved);
+  setRoute(hash);
+}
+
+/** Expand or collapse a group. */
+function toggleGroup(key) {
+  const next = new Set(state.open);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  routeWith({ open: next }, drawer.id);
 }
 
 function listingParams(extra = {}) {
@@ -304,38 +402,63 @@ function listingParams(extra = {}) {
     annotation: state.annotation,
     q: state.query,
     flag: state.flag,
+    sort: state.sort?.key,
+    order: state.sort?.order,
     limit: PAGE_SIZE,
     ...extra,
   };
 }
 
+/** Read the rollouts of every open group not yet read, under the current filters and sort. */
+async function loadOpenGroups() {
+  const runId = state.runId;
+  const wanted = [...state.open].filter((key) => !state.details.has(key));
+  if (!wanted.length) return;
+  for (const key of wanted) state.details.set(key, { loading: true });
+  drawRun();
+  await Promise.all(
+    wanted.map(async (key) => {
+      try {
+        const detail = await api.group(key, listingParams({ limit: null, cursor: null }));
+        if (state.runId === runId) state.details.set(key, detail);
+      } catch (error) {
+        if (state.runId === runId) state.details.set(key, { error: error.message || String(error) });
+      }
+    })
+  );
+  if (state.runId === runId) drawRun();
+}
+
 /** Fetch one page of the current run and filters. The cursor is opaque. */
 async function loadPage(index, { refresh = false } = {}) {
   const runId = state.runId;
+  const view = state.view;
   const cursor = state.cursors[index] ?? null;
   state.loading = true;
   drawRun();
   try {
-    const listing = await api.trajectories(listingParams({ cursor, refresh: refresh ? 'true' : null }));
-    if (state.runId !== runId) return;
+    const call = view === 'groups' ? api.groups : api.trajectories;
+    const listing = await call(listingParams({ cursor, refresh: refresh ? 'true' : null }));
+    if (state.runId !== runId || state.view !== view) return;
     state.rows = listing.data;
     state.page = index;
     state.hasMore = Boolean(listing.has_more);
     state.indexing = Boolean(listing.indexing);
     state.total = listing.total ?? null;
     state.health = listing.health || { scanned: 0, total: 0, counts: [] };
+    state.range = listing.reward_range ?? null;
     if (listing.next_cursor) state.cursors[index + 1] = listing.next_cursor;
     state.loading = false;
     drawRun();
+    if (view === 'groups') await loadOpenGroups();
   } catch (error) {
     state.loading = false;
     mount(mainEl, h('div', { class: 'page' }, h('div', { class: 'err' }, String(error.message || error))));
   }
 }
 
-async function loadRun(runId) {
+function resetFilters() {
   Object.assign(state, {
-    runId,
     rows: [],
     step: null,
     task: null,
@@ -347,15 +470,17 @@ async function loadRun(runId) {
     cursors: [null],
     total: 0,
     hasMore: false,
+    open: new Set(),
+    details: new Map(),
+    range: null,
     health: { scanned: 0, total: 0, counts: [] },
   });
-  drawSidebar();
-  mount(mainEl, h('div', { class: 'page' }, h('div', { class: 'spin' }, 'loading run...')));
-  await loadPage(0);
 }
 
+const sameSort = (a, b) => (a?.key ?? null) === (b?.key ?? null) && (a?.order ?? null) === (b?.order ?? null);
+
 async function route() {
-  let { runId, trajectoryId } = parseRoute();
+  let { runId, view, sort = null, open = [], scrollTo = null, trajectoryId } = parseRoute();
   if (!runId) {
     if (!state.runs.length) {
       mount(mainEl, h('div', { class: 'page' }, h('div', { class: 'empty-state' }, 'No skycap records found yet. A run appears here once its directory holds a record.')));
@@ -366,7 +491,50 @@ async function route() {
     runId = state.runs[0].id;
     setRoute(`#/run/${encodeURIComponent(runId)}`, true);
   }
-  if (runId !== state.runId) await loadRun(runId);
+  if (runId !== state.runId) {
+    state.runId = runId;
+    resetFilters();
+    // Whether a run has groups is known once it is indexed; a listing indexes it.
+    if (currentRun()?.indexing && !view) {
+      mount(mainEl, h('div', { class: 'page' }, h('div', { class: 'spin' }, 'indexing run...')));
+      try {
+        await api.trajectories({ run_id: runId, limit: 1 });
+        state.runs = await api.runs({});
+      } catch {
+        /* the listing below reports it */
+      }
+    }
+    state.view = view || defaultView();
+    state.sort = sort;
+    state.open = new Set(open);
+    state.scrollTo = scrollTo;
+    drawSidebar();
+    await loadPage(0);
+  } else {
+    const nextView = view || defaultView();
+    if (nextView !== state.view || !sameSort(sort, state.sort)) {
+      if (nextView !== state.view) state.flag = null;
+      state.view = nextView;
+      state.sort = sort;
+      state.page = 0;
+      state.cursors = [null];
+      state.rows = [];
+      // A new sort re-orders the open groups' rollouts too.
+      state.details = new Map();
+      state.open = new Set(open);
+      state.scrollTo = scrollTo;
+      await loadPage(0);
+    } else {
+      const next = new Set(open);
+      const changed = next.size !== state.open.size || [...next].some((key) => !state.open.has(key));
+      state.open = next;
+      if (scrollTo) state.scrollTo = scrollTo;
+      if (changed || scrollTo) {
+        drawRun();
+        await loadOpenGroups();
+      }
+    }
+  }
   if (trajectoryId && drawer.id !== trajectoryId) {
     drawer.runId = runId;
     drawer.open(trajectoryId);
@@ -406,14 +574,16 @@ async function refreshNow() {
     // which resets the scroll of whoever is reading it.
     if (runsSignature(state.runs) !== drawn.runs) drawSidebar();
     if (state.runId && state.page === 0) {
-      const listing = await api.trajectories(listingParams({ refresh: 'true' }));
-      const known = new Set(state.rows.map((row) => row.id));
-      const fresh = listing.data.some((row) => !known.has(row.id));
+      const call = state.view === 'groups' ? api.groups : api.trajectories;
+      const listing = await call(listingParams({ refresh: 'true' }));
+      const known = new Set(state.rows.map((row) => row.id ?? row.key));
+      const fresh = listing.data.some((row) => !known.has(row.id ?? row.key));
       state.rows = listing.data;
       state.indexing = Boolean(listing.indexing);
       state.total = listing.total ?? null;
       state.hasMore = Boolean(listing.has_more);
       state.health = listing.health || state.health;
+      state.range = listing.reward_range ?? state.range;
       if (fresh) state.cursors = [null];
       if (rowsSignature(state.rows, state) !== drawn.rows) drawRun();
     }
@@ -424,6 +594,6 @@ async function refreshNow() {
 }
 
 // Exported for tests.
-export { state };
+export { state, parseRoute, pageRoute, toggleGroup };
 
 boot();

@@ -25,7 +25,11 @@ export const rowsSignature = (rows, view) =>
     view.total,
     JSON.stringify(view.health?.counts ?? null),
     ...(rows || []).map(
-      (row) => `${row.id}:${row.status}:${row.revision}:${row.summary ? 1 : 0}`
+      // A rollout row, or a group row (which has a key, not an id).
+      (row) =>
+        row.key !== undefined && row.id === undefined
+          ? `${row.key}:${row.n}:${row.flags?.join(',')}:${(row.rewards || []).map((r) => `${r.id}=${r.reward}`).join(',')}`
+          : `${row.id}:${row.status}:${row.revision}:${row.summary ? 1 : 0}`
     ),
   ].join('|');
 

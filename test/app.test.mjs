@@ -31,7 +31,7 @@ globalThis.history = { replaceState(_state, _title, hash) { globalThis.location.
 globalThis.setInterval = () => 0;
 const settle = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const { state } = await import('../public/app.mjs');
+const { state, parseRoute, pageRoute, toggleGroup } = await import('../public/app.mjs');
 before(() => settle(600));
 
 test('it says it is reading skycap records, and from where', () => {
@@ -42,7 +42,7 @@ test('it says it is reading skycap records, and from where', () => {
 });
 
 test('with no route it opens the newest run rather than an empty page', () => {
-  assert.match(globalThis.location.hash, /^#\/run\/(real|spec)$/);
+  assert.match(globalThis.location.hash, /^#\/run\/(groups|real|spec)$/);
   assert.match(shim.byId('main').textContent, new RegExp(state.runId));
 });
 
@@ -55,8 +55,19 @@ test('the run page is a flat list with a health band and filters, not a grid', (
   assert.match(main.findAll((node) => node.hasClass('pager'))[0].textContent, /1-\d+ of \d+/);
 });
 
+test('a run whose records carry the group key opens on its groups, with a toggle', () => {
+  assert.equal(state.runId, 'groups');
+  assert.equal(state.view, 'groups');
+  const main = shim.byId('main');
+  const toggle = main.findAll((node) => node.hasClass('view-toggle'));
+  assert.equal(toggle.length, 1);
+  assert.match(toggle[0].textContent, /groups 5.*rollouts 20/);
+  assert.equal(main.findAll((node) => node.hasClass('group-row')).length, 5);
+  assert.ok(asked.some((url) => url.startsWith('/api/v1/groups?')));
+});
+
 test('rows arrive with their strips and flags; no per-row scan', () => {
-  assert.ok(shim.byId('main').findAll((node) => node.hasClass('strip')).length > 0);
+  assert.ok(shim.byId('main').findAll((node) => node.hasClass('dots')).length > 0);
   assert.equal(asked.filter((url) => url.includes('/paths')).length, 0);
 });
 
@@ -96,4 +107,39 @@ test('an unchanged poll is recognised, and a change is noticed', () => {
   assert.notEqual(rowsSignature(rows, view), rowsSignature(rows, { ...view, health: { counts: [] } }), 'the band changed');
   const bundle = { trajectory: { status: 'finished', revision: 1, capture: { exchange_count: 4, node_count: 10 } }, paths: { paths: [{}] }, exchanges: { data: [] } };
   assert.equal(trajectorySignature(bundle), trajectorySignature(structuredClone(bundle)));
+});
+
+test('the step filter is a select: all steps, then each step with its count', () => {
+  const main = shim.byId('main');
+  const select = main.findAll((node) => node.tagName === 'SELECT' && node.getAttribute('aria-label') === 'step')[0];
+  assert.ok(select, 'a select, not a slider');
+  assert.equal(main.findAll((node) => node.tagName === 'INPUT' && node.getAttribute('type') === 'range').length, 0);
+  const options = select.children.map((o) => o.textContent);
+  assert.match(options[0], /all steps \(20\)/);
+  assert.deepEqual(options.slice(1), ['step 1 (9)', 'step 2 (11)']);
+});
+
+test('routes: sort and open groups live in the hash; /group/<key> expands and scrolls to it', () => {
+  globalThis.location.hash = '#/run/groups/groups?sort=reward&order=asc&open=1~a,2~b';
+  assert.deepEqual(parseRoute(), { runId: 'groups', view: 'groups', sort: { key: 'reward', order: 'asc' }, open: ['1~a', '2~b'], trajectoryId: null });
+  globalThis.location.hash = '#/run/groups/group/1~a/tr_g1a0a0';
+  const linked = parseRoute();
+  assert.deepEqual([linked.view, linked.open, linked.scrollTo, linked.trajectoryId], ['groups', ['1~a'], '1~a', 'tr_g1a0a0']);
+  globalThis.location.hash = '#/run/groups/rollouts?sort=tokens&order=desc';
+  assert.deepEqual(parseRoute().sort, { key: 'tokens', order: 'desc' });
+});
+
+test('expanding a group puts it in the route, and a rollout inside keeps it', async () => {
+  globalThis.location.hash = '#/run/groups';
+  state.view = 'groups';
+  state.sort = { key: 'reward', order: 'desc' };
+  state.open = new Set();
+  toggleGroup('1~a');
+  assert.equal(globalThis.location.hash, '#/run/groups?sort=reward&order=desc&open=1%7Ea');
+  assert.equal(state.open.size, 0, 'the route changes; route() applies it');
+  state.open = new Set(['1~a']); // what route() applies from that hash
+  assert.equal(pageRoute('tr_g1a0a0'), '#/run/groups/groups/tr_g1a0a0?sort=reward&order=desc&open=1%7Ea');
+  toggleGroup('1~a');
+  assert.equal(globalThis.location.hash, '#/run/groups?sort=reward&order=desc', 'clicking again collapses');
+  state.sort = null;
 });

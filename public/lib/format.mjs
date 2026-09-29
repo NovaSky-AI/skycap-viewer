@@ -52,3 +52,27 @@ export function visible(text) {
 
 export const short = (id, keep = 8) =>
   !id ? '-' : id.length <= keep + 4 ? id : `${id.slice(0, keep)}…${id.slice(-4)}`;
+
+/** A reward's colour on a continuous red -> green scale.
+ *
+ * Rewards are not assumed binary: fully red at the range's minimum, fully
+ * green at its maximum, linear between. The range is the run-wide one the
+ * server sends with a listing (over the rollouts being shown), so one colour
+ * means one reward in every group and on every page. `pct` is how green. */
+export function rewardColor(value, range) {
+  const v = typeof value === 'boolean' ? Number(value) : value;
+  if (typeof v !== 'number' || !Number.isFinite(v) || !range) return { pct: null, css: null };
+  const span = range.max - range.min;
+  // Every reward shown is the same: no scale to place it on, so the middle.
+  const pct = span > 0 ? Math.round(Math.max(0, Math.min(1, (v - range.min) / span)) * 100) : 50;
+  return { pct, css: `color-mix(in srgb, var(--sampled) ${pct}%, var(--replayed))` };
+}
+
+export const formatReward = (value) =>
+  typeof value === 'number' ? (Number.isInteger(value) ? String(value) : value.toFixed(2)) : typeof value === 'boolean' ? String(Number(value)) : '-';
+
+/** The legend that says what the colours mean. */
+export const rangeText = (range) =>
+  range
+    ? `reward colour: red = ${formatReward(range.min)} (lowest shown) → green = ${formatReward(range.max)} (highest shown), over every rollout the filters list`
+    : 'no numeric rewards to colour';

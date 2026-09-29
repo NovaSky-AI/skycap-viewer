@@ -9,6 +9,7 @@ import { RecordDirectory } from './directory.js';
 import { DOC_SUFFIX } from './record.js';
 import { pathsOf, trajectoryOf } from './view.js';
 import { summarise } from '../public/lib/diagnose.mjs';
+import { DEFAULT_GROUP_BY, groupable, groupRows } from './groups.js';
 
 const isRecordDir = (dir) => {
   try {
@@ -52,8 +53,9 @@ export function rowOf(doc, { run, project, mtimeMs }) {
 }
 
 export class Runs {
-  constructor(roots) {
+  constructor(roots, { groupBy = DEFAULT_GROUP_BY } = {}) {
     this.roots = roots.map((r) => resolve(r));
+    this.groupBy = groupBy;
     /** id -> {id, dir, project, index} */
     this.runs = new Map();
     this.discover();
@@ -117,6 +119,8 @@ export class Runs {
       tokenizer ??= r.tokenizer;
     }
     const stepList = [...steps.keys()].sort((a, b) => a - b);
+    const canGroup = groupable(rows, this.groupBy);
+    const grouping = canGroup ? groupRows(rows, this.groupBy) : null;
     return {
       ...out,
       created_at: Number.isFinite(created) ? new Date(created * 1000).toISOString() : null,
@@ -129,6 +133,10 @@ export class Runs {
       annotations,
       upstream: tokenizer ? { model: tokenizer } : null,
       unreadable: [...run.index.cache.values()].filter((e) => e.error).length,
+      group_by: this.groupBy,
+      groupable: canGroup,
+      group_count: grouping ? grouping.groups.length : 0,
+      modal_group_size: grouping ? grouping.modal : null,
     };
   }
 }

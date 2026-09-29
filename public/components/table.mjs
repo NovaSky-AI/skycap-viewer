@@ -10,6 +10,9 @@ import { h, mount } from '../lib/dom.mjs';
 import { num, pct, short, ago } from '../lib/format.mjs';
 import { flagLevel, flagWhy } from '../lib/diagnose.mjs';
 import { strip, legend } from './strip.mjs';
+import { sortHeader } from './sort.mjs';
+import { rewardCell } from './groups.mjs';
+import { rangeText } from '../lib/format.mjs';
 
 export function renderHealth(container, { health, active, onToggle }) {
   if (!health.counts.length) {
@@ -71,60 +74,45 @@ function flagBadges(all) {
   );
 }
 
-export function renderTable(container, { rows, selected, onOpen }) {
+/** The rollout list's columns; those with `sort` are clickable headers. */
+export const ROLLOUT_COLUMNS = [
+  { label: 'trajectory', sort: null },
+  { label: 'task', sort: 'task' },
+  { label: 'step', sort: 'step', numeric: true },
+  { label: 'mask', sort: null },
+  { label: 'tokens', sort: 'tokens', numeric: true },
+  { label: 'trainable', sort: null, numeric: true },
+  { label: 'turns', sort: 'turns', numeric: true },
+  { label: 'paths', sort: null, numeric: true },
+  { label: 'reward', sort: 'reward', numeric: true },
+  { label: 'flags', sort: 'health', title: 'sorts by how many flags a rollout carries' },
+  { label: 'status', sort: null },
+  { label: 'when', sort: 'created' },
+];
+
+export function renderTable(container, { rows, selected, onOpen, sort = null, onSort = () => {}, range = null }) {
   if (!rows.length) {
     mount(container, h('div', { class: 'empty-state' }, 'No trajectories match.'));
     return;
   }
-
-  const head = h(
-    'tr',
-    {},
-    h('th', {}, 'trajectory'),
-    h('th', {}, 'task'),
-    h('th', { class: 'n' }, 'step'),
-    h('th', {}, 'mask'),
-    h('th', { class: 'n' }, 'tokens'),
-    h('th', { class: 'n' }, 'trainable'),
-    h('th', { class: 'n' }, 'paths'),
-    h('th', { class: 'n' }, 'reward'),
-    h('th', {}, 'flags'),
-    h('th', {}, 'status'),
-    h('th', {}, 'when')
-  );
 
   const body = rows.map((row) => {
     const summary = row.summary;
     // The first path's shape, which the server computes from the document
     // alone when it indexes the run.
     const blocks = summary?.strip;
-    const rewardValue = row.annotations?.reward;
     return h(
       'tr',
-      {
-        class: row.id === selected ? 'active' : '',
-        onclick: () => onOpen(row.id),
-      },
+      { class: row.id === selected ? 'active' : '', onclick: () => onOpen(row.id) },
       h('td', { class: 'mono', title: row.id }, short(row.id, 10)),
       h('td', { class: 'mono dim' }, row.task_id || '-'),
       h('td', { class: 'n mono' }, row.step ?? '-'),
-      h(
-        'td',
-        { class: 'strip-cell' },
-        summary ? strip(blocks || []) : h('span', { class: 'spin' }, '...')
-      ),
+      h('td', { class: 'strip-cell' }, summary ? strip(blocks || []) : h('span', { class: 'spin' }, '...')),
       h('td', { class: 'n mono' }, summary ? num(summary.tokens) : '-'),
-      h(
-        'td',
-        { class: 'n mono' },
-        summary ? `${num(summary.trainable)} ${pct(summary.trainable, summary.tokens)}` : '-'
-      ),
+      h('td', { class: 'n mono' }, summary ? `${num(summary.trainable)} ${pct(summary.trainable, summary.tokens)}` : '-'),
+      h('td', { class: 'n mono dim' }, num(row.capture?.exchange_count ?? 0)),
       h('td', { class: 'n mono dim' }, summary ? summary.paths : '-'),
-      h(
-        'td',
-        { class: 'n mono' },
-        typeof rewardValue === 'number' ? rewardValue.toFixed(2) : '-'
-      ),
+      h('td', { class: 'n' }, rewardCell(row.annotations?.reward, range)),
       h('td', {}, summary ? flagBadges(summary.flags) : h('span', { class: 'spin' }, '...')),
       h('td', { class: 'mono dim' }, row.status),
       h('td', { class: 'mono dim', title: row.created_at }, ago(row.created_at))
@@ -133,7 +121,8 @@ export function renderTable(container, { rows, selected, onOpen }) {
 
   mount(
     container,
-    h('div', { class: 'table-scroll' }, h('table', { class: 'rows' }, h('thead', {}, head), h('tbody', {}, body))),
+    h('div', { class: 'legend reward-legend' }, h('span', { class: 'ramp' }), rangeText(range)),
+    h('div', { class: 'table-scroll' }, h('table', { class: 'rows' }, h('thead', {}, sortHeader(ROLLOUT_COLUMNS, sort, onSort)), h('tbody', {}, body))),
     h('div', { style: { marginTop: '12px' } }, legend())
   );
 }

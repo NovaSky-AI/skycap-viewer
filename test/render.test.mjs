@@ -306,3 +306,105 @@ test('the sidebar groups runs under their project, and filters', () => {
   renderSidebar(none, { runs: payload.runs, active: null, source: { kind: 'record', label: 'x', api: '' }, filter: 'nothing-matches', onFilter() {}, onPick() {}, onTheme() {} });
   assert.match(none.textContent, /no match/);
 });
+
+// -- GRPO groups ----------------------------------------------------------------
+const { renderGroups, GROUP_COLUMNS } = await import('../public/components/groups.mjs');
+const { rewardColor } = await import('../public/lib/format.mjs');
+const { nextSort } = await import('../public/components/sort.mjs');
+
+const cells = (tr) => tr.children.filter((child) => child.tagName === 'TD');
+const groupsRoot = async (openKeys = [], query = '') => {
+  const listing = await get(`/v1/groups?run_id=groups${query}`);
+  const details = new Map();
+  for (const key of openKeys) details.set(key, await get(`/v1/groups/${encodeURIComponent(key)}?run_id=groups${query}`));
+  const root = el();
+  const toggled = [];
+  const opened = [];
+  renderGroups(root, {
+    groups: listing.data, open: new Set(openKeys), details, range: listing.reward_range, sort: listing.sort,
+    onSort() {}, onToggle: (key) => toggled.push(key), onOpenRollout: (id) => opened.push(id),
+  });
+  return { root, listing, toggled, opened };
+};
+
+test('reward colour is a continuous red -> green scale over the range: min, mid, max', () => {
+  const range = { min: 0, max: 1 };
+  assert.equal(rewardColor(0, range).pct, 0, 'fully red at the minimum');
+  assert.equal(rewardColor(0.5, range).pct, 50);
+  assert.equal(rewardColor(1, range).pct, 100, 'fully green at the maximum');
+  assert.equal(rewardColor(0.2, { min: 0.2, max: 0.9 }).pct, 0);
+  assert.equal(rewardColor(0.9, { min: 0.2, max: 0.9 }).pct, 100);
+  assert.match(rewardColor(0.25, range).css, /color-mix\(in srgb, var\(--sampled\) 25%, var\(--replayed\)\)/);
+  assert.equal(rewardColor(null, range).css, null, 'no reward, no colour');
+  assert.equal(rewardColor(3, { min: 3, max: 3 }).pct, 50, 'all equal: the middle');
+});
+
+test('a group row: step, task, one reward dot per rollout coloured on the run-wide range, ranges, rolled-up health; no N, no pass count', async () => {
+  const { root, listing } = await groupsRoot();
+  assert.deepEqual(listing.reward_range, { min: 0, max: 1 });
+  const rows = root.findAll((node) => node.hasClass('group-row'));
+  assert.equal(rows.length, 5);
+  const heads = root.findAll((node) => node.tagName === 'TH').map((th) => th.textContent.replace(/[▲▼↕]/g, '').trim());
+  assert.deepEqual(heads, ['step', 'task / rollout', 'rewards', 'turns', 'tokens', 'health']);
+  const retried = rows[listing.data.findIndex((g) => g.key === '1~a')];
+  assert.match(retried.textContent, /task-a/);
+  assert.match(retried.textContent, /retried/);
+  assert.doesNotMatch(root.textContent, /pass|mean|advantage/i, 'no pass count, no training metrics');
+  const dots = retried.findAll((node) => node.hasClass('dot'));
+  assert.deepEqual(dots.map((d) => d.style.background.match(/(\d+)%/)[1]), ['100', '0', '100', '100'], 'repetition order, coloured by value');
+  const scaled = rows[listing.data.findIndex((g) => g.key === '2~c')];
+  assert.deepEqual(scaled.findAll((node) => node.hasClass('dot')).map((d) => d.style.background.match(/(\d+)%/)[1]), ['20', '50', '90', '50'], 'the run-wide range, not the group\'s own');
+  assert.match(root.textContent, /red = 0 \(lowest shown\) → green = 1 \(highest shown\)/);
+});
+
+test('clicking a group row toggles it; an expanded group lists its rollouts beneath it, under the same columns', async () => {
+  const { root: closed, toggled } = await groupsRoot();
+  closed.findAll((node) => node.hasClass('group-row'))[0].listeners.click[0]({});
+  assert.equal(toggled.length, 1, 'a click asks to toggle that group');
+  assert.equal(closed.findAll((node) => node.hasClass('rollout-row')).length, 0, 'collapsed: no rollouts');
+
+  const { root, opened } = await groupsRoot(['1~a', '2~b']);
+  const trs = root.findAll((node) => node.tagName === 'TR').slice(1);
+  const kinds = trs.map((tr) => (tr.hasClass('group-row') ? `g:${tr.dataset.key}` : 'r'));
+  const at = kinds.indexOf('g:1~a');
+  assert.deepEqual(kinds.slice(at, at + 6), ['g:1~a', 'r', 'r', 'r', 'r', 'r'], '4 counting rollouts and 1 superseded attempt, under their group');
+  assert.equal(root.findAll((node) => node.hasClass('group-row') && node.hasClass('open')).length, 2, 'several groups open at once');
+  for (const tr of trs) assert.equal(cells(tr).length, GROUP_COLUMNS.length, 'every row has the same column count');
+  const rollout = trs.find((tr) => tr.hasClass('rollout-row'));
+  rollout.listeners.click[0]({ stopPropagation() {} });
+  assert.equal(opened.length, 1, 'a rollout opens the drawer');
+  // Ranked by reward, superseded attempt greyed under the one that counts.
+  const group = trs.slice(at + 1, at + 6);
+  const superseded = group.findIndex((tr) => tr.hasClass('superseded'));
+  assert.ok(superseded > 0);
+  assert.match(group[superseded - 1].textContent, /a1/);
+  assert.match(cells(group[0])[2].textContent, /^1$/, 'the reward cell carries the value');
+  assert.match(cells(group[0])[2].findAll((n) => n.hasClass('value'))[0].style.color, /var\(--sampled\) 100%/);
+});
+
+test('an expanded group emphasises the rollouts a filter matches', async () => {
+  const { root } = await groupsRoot(['2~b'], '&annotation=stop_reason=agent_timeout');
+  assert.equal(root.findAll((n) => n.hasClass('rollout-row') && n.hasClass('matched')).length, 1);
+  assert.equal(root.findAll((n) => n.hasClass('rollout-row') && n.hasClass('unmatched')).length, 3);
+});
+
+test('column headers sort: click to sort, again to flip, with an indicator', async () => {
+  assert.deepEqual(nextSort(null, 'reward'), { key: 'reward', order: 'desc' });
+  assert.deepEqual(nextSort({ key: 'reward', order: 'desc' }, 'reward'), { key: 'reward', order: 'asc' });
+  assert.deepEqual(nextSort(null, 'task'), { key: 'task', order: 'asc' });
+  const listing = await get('/v1/groups?run_id=groups&sort=tokens&order=asc');
+  const asked = [];
+  const root = el();
+  renderGroups(root, { groups: listing.data, range: listing.reward_range, sort: listing.sort, onSort: (sort) => asked.push(sort) });
+  const sorted = root.findAll((n) => n.tagName === 'TH' && n.hasClass('sorted'));
+  assert.equal(sorted.length, 1);
+  assert.match(sorted[0].textContent, /tokens ▲/);
+  assert.equal(sorted[0].getAttribute('aria-sort'), 'ascending');
+  root.findAll((n) => n.tagName === 'TH')[2].listeners.click[0]({});
+  assert.deepEqual(asked, [{ key: 'reward', order: 'desc' }]);
+  const rollouts = el();
+  const list = await get('/v1/trajectories?run_id=real&sort=reward&order=desc');
+  renderTable(rollouts, { rows: list.data, selected: null, onOpen() {}, sort: list.sort, onSort() {}, range: list.reward_range });
+  assert.match(rollouts.findAll((n) => n.tagName === 'TH' && n.hasClass('sorted'))[0].textContent, /reward ▼/);
+  assert.ok(rollouts.findAll((n) => n.hasClass('reward')).length === list.data.length, 'rollout rows carry the coloured reward cell');
+});

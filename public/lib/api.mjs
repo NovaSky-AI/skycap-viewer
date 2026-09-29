@@ -25,6 +25,9 @@ export const api = {
   // moved between two directories and a refresh of one would show it twice.
   runs: (params) => get('/runs', params).then((b) => b.data),
   trajectories: (params) => get('/trajectories', params),
+  // GRPO groups: the rollouts of one prompt at one step.
+  groups: (params) => get('/groups', params),
+  group: (key, params) => get(`/groups/${encodeURIComponent(key)}`, params),
   // `run_id` pins which record directory to read; ids are unique within one.
   trajectory: (id, runId) => get(`/trajectories/${id}`, { run_id: runId }),
   paths: (id, params) => get(`/trajectories/${id}/paths`, params),

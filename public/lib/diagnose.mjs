@@ -12,6 +12,12 @@
  */
 
 const FLAGS = {
+  // Group flags (a GRPO group: the rollouts of one prompt at one step).
+  'no-signal': { level: 'warn', why: 'every rollout in the group got the same reward: the group trains nothing' },
+  masked: { level: 'warn', why: 'a rollout stopped on agent_timeout or error, and the Harbor composer masks the whole instance' },
+  short: { level: 'warn', why: 'fewer rollouts than the run\'s usual group size' },
+  retried: { level: 'info', why: 'a repetition was retried: the highest attempt counts, the earlier ones are superseded' },
+  // Rollout flags.
   'failed-calls': { level: 'error', why: 'calls that produced no node: an upstream error or an unreadable reply (the record\'s failures)' },
   incomplete: { level: 'error', why: 'written at shutdown, before the trajectory ended: capture did not see all of it' },
   'no-logprobs': { level: 'error', why: 'sampled tokens without logprobs cannot be importance-weighted' },
