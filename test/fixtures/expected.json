@@ -1657,6 +1657,58 @@
    "1": "<a>yz"
   }
  },
+ "tr_shared_reply": {
+  "nodes": 6,
+  "calls": 3,
+  "paths": [
+   {
+    "leaf": 3,
+    "path": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "targets": [
+     1,
+     3
+    ],
+    "tokens": 54,
+    "trained_tokens": 10
+   },
+   {
+    "leaf": 5,
+    "path": [
+     0,
+     1,
+     4,
+     5
+    ],
+    "targets": [
+     5
+    ],
+    "tokens": 55,
+    "trained_tokens": 5
+   }
+  ],
+  "branch_points": [
+   1
+  ],
+  "unbridged": 0,
+  "bridged": [
+   null,
+   true,
+   true
+  ],
+  "node_text": {
+   "0": "<s>user\nq</s>\n",
+   "1": "<s>assistant\nre20</s>",
+   "2": "\n<s>user\nleft</s>\n",
+   "3": "<s>assistant\nre49</s>",
+   "4": "\n<s>user\nright</s>\n",
+   "5": "<s>assistant\nre50</s>"
+  }
+ },
  "tr_text": {
   "nodes": 2,
   "calls": 1,

@@ -62,3 +62,29 @@ async def forked():
         import orjson, zstandard
         (out / "tr_forked_unbridged.json.zst").write_bytes(zstandard.ZstdCompressor(level=3).compress(orjson.dumps(doc)))
 asyncio.run(forked())
+
+
+def rename(record_id, name):
+    import orjson, zstandard
+    for p in out.glob(f"{record_id}.*"):
+        p.rename(out / p.name.replace(record_id, name))
+    doc = record.read_document(out, name)
+    doc["id"] = name
+    for kind in doc["sidecars"].values():
+        kind["file"] = kind["file"].replace(record_id, name)
+    (out / f"{name}.json.zst").write_bytes(zstandard.ZstdCompressor(level=3).compress(orjson.dumps(doc)))
+
+
+# 7. a fork *after* a model turn: two follow-ups to one reply. The shared reply is
+#    trained on the first path only, so the second path carries it as sampled-elsewhere.
+async def shared_reply():
+    async with token_stack(record_dir=out) as stack:
+        created = await stack.create()
+        llm = client(created["base_url"])
+        first = await llm.chat.completions.create(model="policy", messages=[user("q")])
+        reply = first.choices[0].message.model_dump(exclude_none=True)
+        for follow_up in ("left", "right"):
+            await llm.chat.completions.create(model="policy", messages=[user("q"), reply, user(follow_up)])
+        await stack.finish(created["id"], {"reward": 1.0})
+        rename(created["id"], "tr_shared_reply")
+asyncio.run(shared_reply())

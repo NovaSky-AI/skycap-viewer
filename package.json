@@ -1,14 +1,26 @@
 {
   "name": "skycap-viewer",
   "version": "0.1.0",
-  "description": "A viewer for skycap trajectory records (format_version 1)",
+  "description": "A viewer for skycap trajectory records (format_version 1), ported from inference-capture viewer",
   "type": "module",
   "license": "Apache-2.0",
   "private": true,
-  "bin": { "skycap-viewer": "bin/skycap-viewer.js" },
-  "exports": { ".": "./src/record.js", "./record": "./src/record.js", "./server": "./src/server.js" },
-  "files": ["bin", "src", "public"],
-  "engines": { "node": ">=22.15" },
+  "bin": {
+    "skycap-viewer": "bin/skycap-viewer.js"
+  },
+  "exports": {
+    ".": "./src/record.js",
+    "./record": "./src/record.js",
+    "./server": "./src/server.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "public"
+  ],
+  "engines": {
+    "node": ">=22.15"
+  },
   "scripts": {
     "test": "node --test",
     "start": "node bin/skycap-viewer.js"

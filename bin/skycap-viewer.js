@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// skycap-viewer <record-dir> [--port N] [--host H]   serve the viewer
+// skycap-viewer <dir>... [--port N] [--host H]       serve the viewer; each dir is a record
+//                                                    directory or a parent of several (runs)
 // skycap-viewer summary <record-dir>... [--json]     per-directory statistics
 // skycap-viewer check <record-dir>... [--sidecars]   check documents (and tokens sidecars) against format.md
 
@@ -12,7 +13,7 @@ import { check, documentPath, listIds, readDocument, readSidecar, zstdFrames } f
 import { createViewer } from '../src/server.js';
 
 const USAGE = `usage:
-  skycap-viewer <record-dir> [--port N] [--host H] [--quiet]
+  skycap-viewer <dir>... [--port N] [--host H] [--quiet]   (a dir is a record dir, or a parent of record dirs)
   skycap-viewer summary <record-dir>... [--json]
   skycap-viewer check <record-dir>... [--sidecars] [--limit N]`;
 
@@ -101,14 +102,16 @@ if (command === 'summary') {
   }
   process.exit(failed ? 1 : 0);
 } else {
-  const [dir] = dirs(positionals.slice(0, 1));
+  const roots = dirs(positionals);
   const port = Number(values.port);
-  const { server, index } = createViewer(dir, { log: values.quiet ? () => {} : (line) => console.log(line) });
+  const { server, runs } = createViewer(roots, { log: values.quiet ? () => {} : (line) => console.log(line) });
+  if (!runs.runs.size) console.log(`no skycap records under ${roots.join(', ')} yet; they appear on refresh`);
   server.listen(port, values.host, async () => {
     const { port: bound } = server.address();
-    console.log(`skycap-viewer: ${dir} at http://${values.host}:${bound}/`);
+    console.log(`skycap-viewer: ${runs.runs.size} run(s) under ${roots.join(', ')} at http://${values.host}:${bound}/`);
     const t0 = Date.now();
-    await index.refresh();
-    console.log(`indexed ${index.cache.size} documents in ${Date.now() - t0} ms`);
+    await runs.warm();
+    const docs = [...runs.runs.values()].reduce((s, r) => s + r.index.cache.size, 0);
+    console.log(`indexed ${docs} documents in ${Date.now() - t0} ms`);
   });
 }
