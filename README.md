@@ -220,3 +220,7 @@ The view tests render the real components through the dom-shim against payloads 
 Deferred, not built:
 - comparing two runs group by group;
 - a pass-vs-fail compare of two rollouts in one group.
+
+## License
+
+Apache License 2.0, the same license as [SkyRL](https://github.com/NovaSky-AI/SkyRL). See [LICENSE](LICENSE).
