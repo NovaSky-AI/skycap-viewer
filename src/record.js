@@ -162,13 +162,44 @@ function readBigEndianHost(bytes, offset, count, name, dtype) {
   return data;
 }
 
-/** A sidecar's arrays by name, or null when the document has no sidecar of that kind. */
+/**
+ * A sidecar's arrays by name, or null when the document has no sidecar of that
+ * kind or its file is not here. format.md: a copy (e.g. a mirror's `exclude`)
+ * may lack sidecar files its manifest lists, and a reader treats a listed
+ * sidecar whose file is missing as absent.
+ */
 export function readSidecar(dir, doc, kind) {
   const entry = doc.sidecars?.[kind];
   if (!entry) return null;
   const path = join(dir, entry.file);
-  if (!existsSync(path)) throw new RecordError(`${doc.id}: ${kind} sidecar ${entry.file} is missing`);
+  if (!existsSync(path)) return null;
   return viewSidecar(decompress(readFileSync(path)), entry);
+}
+
+/** Kinds the manifest lists whose file is not in `dir`: absent, whether left out on purpose or lost. */
+export const missingSidecars = (dir, doc) =>
+  Object.entries(doc.sidecars ?? {}).filter(([, entry]) => !existsSync(join(dir, entry.file))).map(([kind]) => kind);
+
+/** Whether a node's `tokens` holds a slice of each sidecar kind. */
+const SLICES = {
+  tokens: (t) => t != null,
+  experts: (t) => t?.experts_offset != null,
+  // The writer leaves the sidecar out when every node has zero mask rows.
+  sampling_mask: (t) => t?.mask_offset != null && t.mask_rows > 0,
+};
+
+/**
+ * What makes a document malformed regardless of the files beside it: a node
+ * slice into a kind its manifest does not list.
+ */
+export function sidecarProblems(doc) {
+  const problems = [];
+  for (const kind of SIDECAR_KINDS) {
+    if (doc.sidecars?.[kind]) continue;
+    const node = (doc.nodes ?? []).find((n) => SLICES[kind](n.tokens));
+    if (node) problems.push(`node ${node.id} slices into ${kind}, which is not in the sidecars manifest`);
+  }
+  return problems;
 }
 
 /** Shapes of every sidecar, from the manifest alone (no decoding). */
@@ -324,6 +355,7 @@ const utf8 = new TextDecoder('utf-8', { fatal: true });
 export function nodeTokens(doc, tokens, nodeId) {
   const meta = doc.nodes[nodeId].tokens;
   if (meta == null) return null;
+  if (!tokens && doc.sidecars?.tokens) return null; // listed, but its file is not here: absent
   if (!tokens) throw new RecordError(`${doc.id}: node ${nodeId} has tokens but the document has no tokens sidecar`);
   const { offset, length } = meta;
   const n = tokens.token_ids.data.length;
@@ -440,7 +472,8 @@ export function check(doc, sidecars = {}) {
     if (n !== cursor) bad(`tokens sidecar has ${n} tokens, nodes cover ${cursor}`);
     if (entry.arrays?.text?.shape?.[0] !== textCursor) bad(`tokens sidecar has ${entry.arrays?.text?.shape?.[0]} text bytes, nodes cover ${textCursor}`);
     for (const [name, a] of Object.entries(entry.arrays ?? {})) if (a.offset % 8) bad(`tokens.${name} offset ${a.offset} not a multiple of 8`);
-  } else if (cursor > 0) bad('nodes have tokens but there is no tokens sidecar');
+  }
+  for (const problem of sidecarProblems(doc)) bad(problem);
   if (sidecars.tokens) {
     for (let i = 0; i < doc.nodes.length; i++) {
       try {
@@ -470,6 +503,7 @@ export function check(doc, sidecars = {}) {
 export function nodeExperts(doc, experts, nodeId) {
   const meta = doc.nodes[nodeId].tokens;
   if (meta?.experts_offset == null) return null;
+  if (!experts && doc.sidecars?.experts) return null; // listed, but its file is not here: absent
   if (!experts) throw new RecordError(`${doc.id}: node ${nodeId} has experts but there is no experts sidecar`);
   const { shape, data } = experts.routed_experts;
   const row = shape.slice(1).reduce((a, b) => a * b, 1);
@@ -485,6 +519,7 @@ export function nodeSamplingMask(doc, mask, nodeId) {
   const meta = doc.nodes[nodeId].tokens;
   if (meta?.mask_offset == null) return null;
   if (meta.mask_rows === 0) return []; // the writer omits the sidecar when every node has zero rows
+  if (!mask && doc.sidecars?.sampling_mask) return null; // listed, but its file is not here: absent
   if (!mask) throw new RecordError(`${doc.id}: node ${nodeId} has mask rows but there is no sampling_mask sidecar`);
   const ids = mask.ids.data;
   const bounds = mask.offsets.data;

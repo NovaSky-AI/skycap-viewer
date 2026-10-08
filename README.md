@@ -25,6 +25,8 @@ Once `npm link` has been run, the same commands work as `skycap-viewer ...`.
 
 A `<dir>` is either a record directory (it holds `*.json.zst`), or a parent whose children or grandchildren are record directories. Each record directory is a **run**. For example, `skycap-viewer /tmp/harbor/runs` lists every `harbor-skycap-*/skycap` as a run. A run is named after its directory, or after the directory's parent when the directory itself is named `skycap`. A parent is rescanned on refresh, so a run that starts writing later shows up.
 
+A record is a top-level `*.json.zst` in a record directory, with its sidecars beside it. Anything else in the directory, such as the `index/` folder of a pulled run, is ignored.
+
 Each trajectory's step and task come from its `meta`:
 - step is `meta.step`;
 - task is `meta.task_id`, else the basename of `meta.task`, else `meta.instance_id`.
@@ -85,6 +87,15 @@ A retried attempt that errored does not mask its group; only the attempt that co
 
 Nothing here lines groups up across steps. Cross-step stays a filter (the step slider), and a group is just a row.
 
+## Mirrored records
+
+A record mirror can leave sidecar kinds out (format.md "A mirror"). It copies the document unchanged, so a copy may lack sidecar files its manifest lists. As format.md says, the viewer reads a listed sidecar whose file is missing as absent, and doesn't tell "left out on purpose" from "lost":
+- **Missing `tokens`:** message text only. The path view draws the messages, counts them in characters, and warns "tokens sidecar missing: showing message text only". The row gets `tokens-missing` (warn).
+- **Missing `experts` or `sampling_mask`:** ignored, since the viewer shows nothing from them. No flag and no note. The trajectory's `missing_sidecars` (in the drawer's JSON tab) lists them.
+- **`malformed-record` (error):** a node slice into a kind the manifest doesn't list at all. The drawer names the node.
+
+`check` counts listed sidecar files that aren't there ("read as absent") per directory, without calling them problems. It reports `malformed-record`'s case, and offsets that are wrong, as problems.
+
 ## The page
 
 ### The run page
@@ -133,6 +144,8 @@ The fifth kind exists because both alternatives are wrong. Calling these tokens 
 | `truncated` | warn | a call with `finish_reason: length` |
 | `abandoned` | info | `status: abandoned` (idle past the TTL) |
 | `forked` | info | more than one path |
+| `malformed-record` | error | a node slices into a sidecar kind the manifest doesn't list; see [Mirrored records](#mirrored-records) |
+| `tokens-missing` | warn | the manifest lists a tokens sidecar whose file isn't here: message text only; see [Mirrored records](#mirrored-records) |
 | `no-signal`, `masked`, `short`, `retried` | | group flags; see [Groups](#groups) |
 | `bridged-unknown` | info | calls with no `bridged` field (records written before it existed). It is left off the table's rows, where it would be true of every row, and stays in the band and the drawer. |
 
@@ -156,7 +169,9 @@ GET /v1/groups/{key}?run_id=&<filters>&sort=&order=   one group: rollouts sorted
 
 `sort` is one of step, task, reward, turns, tokens, health or created, and `order` is asc or desc. Each listing also returns `sort` and `reward_range` (`{min, max}` over the listed rollouts).
 
-Listing, filtering, flags and the table's strips read only `{id}.json.zst`. The index is cached by mtime and size. The tokens sidecar is opened only for `/paths` with text. For `experts` and `sampling_mask`, only their shapes are shown, taken from the manifest.
+`/paths` carries `text_only` (`tokens-missing`, `tokens-unlisted` or null), and a trajectory carries `missing_sidecars` (listed kinds whose files aren't here) and `record_problems`.
+
+Listing, filtering, flags and the table's strips read only `{id}.json.zst`, and check that its listed sidecar files exist. The index is cached by mtime and size. The tokens sidecar is opened only for `/paths` with text. For `experts` and `sampling_mask`, only their shapes are shown, taken from the manifest.
 
 ## Layout
 
@@ -195,6 +210,8 @@ PYTHONPATH=. uv run --extra tokens python <viewer>/test/expect.py <viewer>/test/
 ```
 
 `test/fixtures/groups` holds 20 rollouts in 5 groups, written by `test/gen_groups.py`. It covers a retry, a no-signal group, a short group, an agent_timeout, and non-binary rewards.
+
+`test/fixtures-mirror` holds copies as a mirror with `exclude` makes them, with the document unchanged, written by `node test/gen_mirror.mjs --write`: one without its experts and sampling_mask files, one with no sidecar files at all, and one whose nodes slice into experts that its manifest doesn't list.
 
 The view tests render the real components through the dom-shim against payloads this server returns for those records. The app test boots `app.mjs` against the in-process server.
 

@@ -15,6 +15,21 @@ import { renderCalls } from './calls.mjs';
 import { renderForks } from './forks.mjs';
 import { trajectorySignature } from '../lib/changed.mjs';
 
+/** What the drawer says about the record's completeness, above the tabs.
+ *  A missing tokens sidecar is a warning (message text only); missing experts or
+ *  sampling_mask are not mentioned here: they are listed in the JSON tab's missing_sidecars. */
+export function recordNotes(trajectory) {
+  if (!trajectory) return [];
+  const notes = [];
+  if ((trajectory.missing_sidecars || []).includes('tokens')) {
+    notes.push(h('div', { class: 'note warn-text', title: 'format.md: a listed sidecar whose file is missing is read as absent' }, 'tokens sidecar missing: showing message text only.'));
+  }
+  for (const problem of trajectory.record_problems || []) {
+    notes.push(h('div', { class: 'err' }, `Malformed record: ${problem}.`));
+  }
+  return notes;
+}
+
 const TABS = [
   ['path', 'Path'],
   ['tree', 'Tree'],
@@ -206,6 +221,7 @@ export class Drawer {
               h('span', {}, stamp(trajectory.created_at))
             )
           : null,
+        recordNotes(trajectory),
         summary && summary.flags.length
           ? h(
               'div',

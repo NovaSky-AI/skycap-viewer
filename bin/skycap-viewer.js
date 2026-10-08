@@ -76,6 +76,8 @@ if (command === 'summary') {
   for (const dir of dirs(positionals)) {
     let docs = 0;
     let bad = 0;
+    // format.md: a copy may lack sidecar files its manifest lists; a reader reads them as absent, so they are counted, not problems.
+    const absent = {};
     for (const id of listIds(dir)) {
       docs++;
       let problems;
@@ -85,7 +87,7 @@ if (command === 'summary') {
         const files = [documentPath(dir, id)];
         for (const [kind, entry] of Object.entries(doc.sidecars ?? {})) {
           const path = join(dir, entry.file);
-          if (!existsSync(path)) problems.push(`${kind} sidecar ${entry.file} is missing`);
+          if (!existsSync(path)) absent[kind] = (absent[kind] ?? 0) + 1;
           else if (values.sidecars) files.push(path);
         }
         for (const path of files) {
@@ -101,6 +103,8 @@ if (command === 'summary') {
       }
     }
     console.log(`${dir}: ${docs} documents, ${bad} with problems${values.sidecars ? ' (tokens sidecars checked)' : ''}`);
+    const kinds = Object.entries(absent);
+    if (kinds.length) console.log(`${dir}: listed sidecar files not here, read as absent: ${kinds.map(([kind, n]) => `${kind} ${n}`).join(', ')}`);
     failed += bad;
   }
   process.exit(failed ? 1 : 0);

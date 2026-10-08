@@ -6,7 +6,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { RecordDirectory } from './directory.js';
-import { DOC_SUFFIX } from './record.js';
+import { DOC_SUFFIX, missingSidecars } from './record.js';
 import { pathsOf, trajectoryOf } from './view.js';
 import { summarise } from '../public/lib/diagnose.mjs';
 import { DEFAULT_GROUP_BY, groupable, groupRows } from './groups.js';
@@ -41,9 +41,12 @@ export function discover(root) {
 /** A run's name: the directory's, or its parent's when the directory is the conventional `skycap/`. */
 export const runName = (dir) => (basename(dir) === 'skycap' ? basename(dirname(dir)) : basename(dir));
 
-/** One indexed row: the trajectory, and its summary (flags, sizes, first path's strip) from the document alone. */
-export function rowOf(doc, { run, project, mtimeMs }) {
-  const trajectory = trajectoryOf(doc, { run, project, revision: mtimeMs });
+/**
+ * One indexed row: the trajectory, and its summary (flags, sizes, first path's
+ * strip) from the document, and from which of its listed sidecar files are in `dir`.
+ */
+export function rowOf(doc, { run, project, mtimeMs, dir = null }) {
+  const trajectory = trajectoryOf(doc, { run, project, revision: mtimeMs, missing: dir ? missingSidecars(dir, doc) : [] });
   const paths = pathsOf(doc, null, { text: false });
   const summary = summarise(paths, trajectory);
   summary.strip = (paths.paths[0]?.blocks ?? []).map(({ kind, token_count, char_count, start, end }) => ({ kind, token_count, char_count, start, end }));
@@ -71,7 +74,7 @@ export class Runs {
           let id = runName(dir);
           for (let n = 2; this.runs.has(id); n++) id = `${runName(dir)}~${n}`;
           run = { id, dir, project, index: null };
-          run.index = new RecordDirectory(dir, { summarize: (doc, st) => rowOf(doc, { run: run.id, project, mtimeMs: st.mtimeMs }) });
+          run.index = new RecordDirectory(dir, { summarize: (doc, st) => rowOf(doc, { run: run.id, project, mtimeMs: st.mtimeMs, dir }) });
           this.runs.set(id, run);
         }
         seen.add(run.id);

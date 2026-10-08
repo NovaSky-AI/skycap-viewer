@@ -19,7 +19,7 @@
 // block's `text`, one per token plus the end, which is what String#slice counts.
 
 import { basename } from 'node:path';
-import { bridgedState, graphOf, nodeTokens, renderSigns } from './record.js';
+import { bridgedState, graphOf, nodeTokens, renderSigns, sidecarProblems } from './record.js';
 
 export const nodeKey = (id) => (id == null ? null : `n${id}`);
 export const iso = (t) => (typeof t === 'number' && Number.isFinite(t) ? new Date(t * 1000).toISOString() : null);
@@ -53,8 +53,12 @@ export function stepOf(meta = {}) {
 
 const modeOf = (doc) => doc.capture?.mode ?? (doc.sidecars?.tokens ? 'tokens' : 'text');
 
-/** Everything a trajectory row and the drawer header show, from the document alone. */
-export function trajectoryOf(doc, { run = null, project = null, revision = null } = {}) {
+/**
+ * Everything a trajectory row and the drawer header show, from the document
+ * alone, and `missing`: the sidecar kinds its manifest lists whose files are not
+ * beside it (record.missingSidecars), which read as absent.
+ */
+export function trajectoryOf(doc, { run = null, project = null, revision = null, missing = [] } = {}) {
   const bridged = { true: 0, false: 0, null: 0, absent: 0 };
   const unbridged = [];
   const truncated = [];
@@ -93,6 +97,9 @@ export function trajectoryOf(doc, { run = null, project = null, revision = null 
     retries: doc.retries ?? null,
     sidecars: Object.fromEntries(Object.entries(doc.sidecars ?? {}).map(([kind, entry]) => [kind,
       Object.fromEntries(Object.entries(entry.arrays ?? {}).map(([name, a]) => [name, { dtype: a.dtype, shape: a.shape }]))])),
+    // Listed, but the file is not here (e.g. a mirror's exclude, or lost): absent.
+    missing_sidecars: missing,
+    record_problems: sidecarProblems(doc),
     skycap: {
       bridged,
       unbridged_nodes: unbridged.map(nodeKey),
@@ -115,14 +122,26 @@ function segmentsOf(node, target) {
 }
 
 /**
+ * Why a token-mode record's paths are drawn from message text, or null:
+ *   tokens-missing   the manifest lists it but the file is not here: absent (format.md)
+ *   tokens-unlisted  nodes slice into it but the manifest does not list it (a malformed record)
+ */
+function textOnlyReason(doc, tokens, text) {
+  if (doc.sidecars?.tokens) return text && !tokens ? 'tokens-missing' : null;
+  return doc.nodes.some((n) => n.tokens != null) ? 'tokens-unlisted' : null;
+}
+
+/**
  * The `/paths` payload: one entry per root-to-leaf path, which is one export row.
- * `tokens` is the decoded tokens sidecar, or null; with `text: false` (or no
- * sidecar) nothing is decoded and blocks carry only their kinds and ranges.
+ * `tokens` is the decoded tokens sidecar, or null; with `text: false` nothing is
+ * decoded and blocks carry only their kinds and ranges. With text and no tokens
+ * to decode, blocks are the messages, and `text_only` says why.
  */
 export function pathsOf(doc, tokens, { text = true } = {}) {
   const g = graphOf(doc);
   const mode = modeOf(doc);
-  const tokenMode = Boolean(doc.sidecars?.tokens);
+  const textOnly = textOnlyReason(doc, tokens, text);
+  const tokenMode = Boolean(doc.sidecars?.tokens) && textOnly === null;
   const decode = text && tokenMode && tokens;
   const trainedIn = new Map();
   g.paths.forEach((p, i) => p.targets.forEach((id) => trainedIn.set(id, i)));
@@ -208,7 +227,7 @@ export function pathsOf(doc, tokens, { text = true } = {}) {
     if (logprobs) out.logprobs = logprobs;
     return out;
   });
-  return { trajectory: doc.id, mode, tokenizer: doc.capture?.tokenizer ?? null, paths };
+  return { trajectory: doc.id, mode, text_only: textOnly, tokenizer: doc.capture?.tokenizer ?? null, paths };
 }
 
 /** The `/graph` payload: one entry per node, plus leaves and branch points. */

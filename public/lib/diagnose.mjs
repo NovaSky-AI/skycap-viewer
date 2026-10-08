@@ -18,6 +18,8 @@ const FLAGS = {
   short: { level: 'warn', why: 'fewer rollouts than the run\'s usual group size' },
   retried: { level: 'info', why: 'a repetition was retried: the highest attempt counts, the earlier ones are superseded' },
   // Rollout flags.
+  'malformed-record': { level: 'error', why: 'a node slices into a sidecar kind the document\'s manifest does not list' },
+  'tokens-missing': { level: 'warn', why: 'the manifest lists a tokens sidecar, but its file is not here (left out of a copy, or lost): message text only' },
   'failed-calls': { level: 'error', why: 'calls that produced no node: an upstream error or an unreadable reply (the record\'s failures)' },
   incomplete: { level: 'error', why: 'written at shutdown, before the trajectory ended: capture did not see all of it' },
   'no-logprobs': { level: 'error', why: 'sampled tokens without logprobs cannot be importance-weighted' },
@@ -39,6 +41,9 @@ export const flagWhy = (name) => FLAGS[name]?.why || '';
 /** Roll a `/paths` response and its trajectory up into what a table row shows. */
 export function summarise(paths, trajectory) {
   const flags = new Set();
+  if (trajectory?.record_problems?.length) flags.add('malformed-record');
+  // format.md: a listed sidecar whose file is missing is absent. Only tokens matter here; experts and sampling_mask are training's.
+  if (trajectory?.missing_sidecars?.includes('tokens') || paths?.text_only === 'tokens-missing') flags.add('tokens-missing');
   const sky = trajectory?.skycap || {};
   if (sky.failures > 0) flags.add('failed-calls');
   if (trajectory?.ended === false || trajectory?.status === 'open') flags.add('incomplete');
@@ -51,7 +56,8 @@ export function summarise(paths, trajectory) {
   const list = paths?.paths || [];
   if (list.length > 1) flags.add('forked');
   if (!list.length) flags.add('empty');
-  const tokensMode = paths?.mode === 'tokens';
+  // Paths drawn from message text (tokens missing or unlisted) have no token flags to raise.
+  const tokensMode = paths?.mode === 'tokens' && !paths?.text_only;
 
   let tokens = 0;
   let trainable = 0;

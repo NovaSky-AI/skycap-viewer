@@ -253,11 +253,18 @@ export function renderPath(container, { data, state, onState }) {
 
   const chosen = Math.min(state.pathIndex || 0, paths.length - 1);
   const path = paths[chosen];
-  const tokens = data.mode === 'tokens';
+  // Token-blocked paths only: a token-mode record whose tokens are not here is drawn from its messages.
+  const tokens = data.mode === 'tokens' && !data.text_only;
   const blocks = (path.blocks || []).filter((block) => state.showGiven || block.kind !== 'given');
 
   const notices = [];
-  if (!tokens) {
+  const errors = [];
+  const warnings = [];
+  if (data.text_only === 'tokens-missing') {
+    warnings.push('tokens sidecar missing: showing message text only. Blocks are the messages, and their widths are characters; token ids, mask and ranges are unavailable.');
+  } else if (data.text_only) {
+    errors.push('Malformed record: its nodes slice into a tokens sidecar its manifest does not list. Shown from the message text instead; token ids, mask and ranges are unavailable.');
+  } else if (!tokens) {
     notices.push(
       'Text mode: no token ids were captured, so there is no mask, no ranges and nothing to re-feed. Blocks are the messages, and their widths are characters.'
     );
@@ -281,11 +288,11 @@ export function renderPath(container, { data, state, onState }) {
     h(
       'div',
       { class: 'toolbar' },
-      h('span', { class: 'mono' }, `${num(path.token_count)} ${tokens ? 'tokens' : 'chars'}`),
+      h('span', { class: 'mono' }, `${num(tokens ? path.token_count : path.char_count)} ${tokens ? 'tokens' : 'chars'}`),
       h(
         'span',
         { class: 'mono' },
-        `${num(path.trainable_count)} trainable (${pct(path.trainable_count, path.token_count)})`
+        `${num(path.trainable_count)} trainable (${pct(path.trainable_count, tokens ? path.token_count : path.char_count)})`
       ),
       path.stop_reason ? h('span', { class: 'mono' }, `stop: ${path.stop_reason}`) : null,
       h(
@@ -331,6 +338,8 @@ export function renderPath(container, { data, state, onState }) {
         'copy json'
       )
     ),
+    errors.map((error) => h('div', { class: 'err' }, error)),
+    warnings.map((warning) => h('div', { class: 'note warn-text' }, warning)),
     notices.map((notice) => h('div', { class: 'note' }, notice)),
     h('div', { style: { margin: '10px 0 14px' } }, legend()),
     blocks.length

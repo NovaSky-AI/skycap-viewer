@@ -19,7 +19,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Runs } from './runs.js';
-import { documentPath, readDocumentAsync, readSidecar } from './record.js';
+import { documentPath, missingSidecars, readDocumentAsync, readSidecar } from './record.js';
 import { exchangesOf, graphPayload, pathsOf, trajectoryOf } from './view.js';
 import { FLAG_NAMES, runHealth } from '../public/lib/diagnose.mjs';
 import { comparator, groupSortValue, rewardRange, rowSortValue, sortOf } from './sorting.js';
@@ -95,11 +95,13 @@ export function createViewer(roots, { log = () => {}, groupBy = DEFAULT_GROUP_BY
     return { run, doc, key, mtimeMs: st.mtimeMs };
   }
 
+  /** The decoded tokens sidecar, or null when the manifest has none or its file is not here (absent, flagged tokens-missing). */
   function tokensOf(run, doc, key) {
     if (!doc.sidecars?.tokens) return null;
     let tokens = sidecars.get(key);
     if (!tokens) {
       tokens = readSidecar(run.dir, doc, 'tokens');
+      if (!tokens) return null;
       sidecars.set(key, tokens);
     }
     return tokens;
@@ -256,7 +258,7 @@ export function createViewer(roots, { log = () => {}, groupBy = DEFAULT_GROUP_BY
     if (parts.length === 1) return listing(params);
     const id = parts[1];
     const { run, doc, key, mtimeMs } = await load(id, params.get('run_id'));
-    if (parts.length === 2) return trajectoryOf(doc, { run: run.id, project: run.project, revision: mtimeMs });
+    if (parts.length === 2) return trajectoryOf(doc, { run: run.id, project: run.project, revision: mtimeMs, missing: missingSidecars(run.dir, doc) });
     if (parts.length === 3 && parts[2] === 'paths') {
       const text = params.get('text') !== 'false';
       return pathsOf(doc, text ? tokensOf(run, doc, key) : null, { text });
