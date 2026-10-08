@@ -26,14 +26,7 @@ The path can be a single record directory, or a folder that contains several; ea
 
 ## Where records come from
 
-- **From a capture server:** skycap writes one record per trajectory into its `--record-dir`. Point the viewer at that directory, even while the run is going; new records appear as they are written.
-- **From a training run logged to W&B:** SkyRL's Harbor integration indexes each step's records in W&B. Its `pull` command brings a run back as local record directories, one per phase:
-
-  ```sh
-  python -m examples.train_integrations.harbor_skycap.record_index \
-    pull <entity>/<project>/skycap-records-train-<run id> ./run
-  skycap-viewer ./run        # lists ./run/train (and ./run/eval) as runs
-  ```
+skycap writes one record per trajectory into its `--record-dir`. Point the viewer at that directory, even while the run is going; new records appear as they are written.
 
 ## What you see
 
