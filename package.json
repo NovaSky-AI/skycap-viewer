@@ -1,7 +1,7 @@
 {
   "name": "skycap-viewer",
   "version": "0.1.0",
-  "description": "A viewer for skycap trajectory records (format_version 1), ported from inference-capture viewer",
+  "description": "A viewer for skycap trajectory records (format_version 1)",
   "type": "module",
   "license": "Apache-2.0",
   "private": true,

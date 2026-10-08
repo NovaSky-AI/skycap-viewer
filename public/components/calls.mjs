@@ -5,11 +5,11 @@
  * budget, a prompt that was re-rendered instead of extended, a failure the
  * harness swallowed.
  *
- * Ported from inference-capture. A skycap record keeps, per model node, every
+ * A skycap record keeps, per model node, every
  * call that produced it ({t_start, t_end, model, sampling, usage,
  * finish_reason, tools, bridged}) and a list of failures. It has no HTTP
- * status, streaming, TTFT or retry attempt per call, so those columns are gone;
- * `bridged` and the node the call produced are added.
+ * status, streaming, TTFT or retry attempt per call, so there are no such
+ * columns; `bridged` and the node the call produced are shown.
  */
 
 import { h, mount } from '../lib/dom.mjs';

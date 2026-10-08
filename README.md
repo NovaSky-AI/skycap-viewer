@@ -4,7 +4,7 @@ A viewer for [skycap](https://github.com/NovaSky-AI/SkyRL/tree/main/skycap) traj
 
 It supports **`format_version` 1**, as specified in `skycap/docs/format.md`, and refuses any other version.
 
-The page is a port of inference-capture's viewer (`inference-capture/viewer`, at 9f7bc77) and keeps its design (`docs/viewer.md`):
+The page's layout:
 - runs down the left, the run's flat filtered trajectory list in the middle, and one trajectory in a drawer on the right;
 - routes in the hash: `#/run/<run>/<trajectory>`.
 
@@ -78,9 +78,9 @@ Expanded rollouts are sorted by the table's column (by reward, highest first, by
 
 A retried attempt that errored does not mask its group; only the attempt that counts does.
 
-**No training metrics.** There is no mean reward, no advantage, no reward − mean and no pass rate on screen. viewer.md's rule, that the viewer's job stops at *is this record right*, stands. The dots and values describe the record; what a trainer makes of them is the trainer's business. The one mean computed, for sorting groups by reward, orders rows and is never displayed.
+**No training metrics.** There is no mean reward, no advantage, no reward − mean and no pass rate on screen. The viewer's job stops at *is this record right*. The dots and values describe the record; what a trainer makes of them is the trainer's business. The one mean computed, for sorting groups by reward, orders rows and is never displayed.
 
-**Why this doesn't contradict run-dimensions.md.** inference-capture's `design/run-dimensions.md` removed the `task × step` grid, because sessions don't recur across steps and a cross-step matrix is a dense view of sparse data. A group is different on both counts:
+**Why groups, but no `task × step` grid.** A grid across steps is a dense view of sparse data: the same task isn't sampled at every step, so most cells would be empty. A group is different on both counts:
 - it sits within one step;
 - it is dense by construction: all N rollouts of one prompt, sampled together;
 - it is the unit GRPO trains on.
@@ -185,7 +185,7 @@ src/sorting.js           server-side column sorts, and the run-wide reward range
 src/view.js              records -> the /v1 payloads (paths as blocks, graph, exchanges)
 src/server.js            node:http: static files + the read API
 src/stats.js             `summary`
-public/                  the page: app.mjs, lib/, components/, style.css (ported)
+public/                  the page: app.mjs, lib/, components/, style.css
 test/                    node --test: parser, API, views rendered through test/dom-shim.mjs, the booted app
 ```
 

@@ -1,11 +1,10 @@
 /** The shell: routing, loading, and the run page.
  *
- * Ported from inference-capture's viewer. The route lives in the hash so a
- * link is a link anyone can paste. A run is one skycap record directory.
+ * The route lives in the hash so a link is a link anyone can paste. A run is
+ * one skycap record directory.
  *
- * What changed from the reference: rows arrive with their flags and mask
- * strip already computed. The reference derived both in the browser, one
- * `/paths` call per row of the page, because its server was a proxy; this
+ * Rows arrive with their flags and mask strip already computed by the server,
+ * rather than derived in the browser with one `/paths` call per row; this
  * server reads the record files itself, so it computes them once per record
  * when it indexes the run -- which also means the health band and the flag
  * filter cover the whole filtered run rather than the page on screen.
@@ -183,8 +182,8 @@ function stepSelect(run, steps) {
 
 /** Task, status, annotation and a text search: the other dimensions of a run.
  *
- * `task` is one dimension among whatever a harness annotates, not an axis
- * (design/run-dimensions.md), so it is a filter like the rest. */
+ * `task` is one dimension among whatever a harness annotates, not an axis,
+ * so it is a filter like the rest. */
 function filterBar(run, first = null) {
   const select = (label, value, options, onPick) =>
     h(

@@ -1,6 +1,6 @@
 /** What is wrong with this record, said in one word per problem.
  *
- * Ported from inference-capture's viewer. A person scrolling a run is not
+ * A person scrolling a run is not
  * reading trajectories; they are looking for the one that is not like the
  * others, and the useful signal is rarely a number. None of this is a
  * training metric: the viewer's job stops at *is this record right*.

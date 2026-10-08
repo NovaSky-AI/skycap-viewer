@@ -16,10 +16,9 @@
  * the plural and this is the only view holding several at once: a sampled node
  * reachable from more than one branch must be in the loss exactly once.
  *
- * Ported from inference-capture. Two adaptations for skycap records: a node
- * with one child continues on its parent's rail (skycap trajectories are long
- * linear chains, and indenting every level pushed a forty-turn conversation
- * off the right edge), and each node carries what the record says about how
+ * A node with one child continues on its parent's rail (skycap trajectories
+ * are long linear chains, and indenting every level would push a forty-turn
+ * conversation off the right edge), and each node carries what the record says about how
  * its prompt was made -- `unbridged` (bridged=false), the inferred re-render
  * for records without the field, a re-tokenized copy of a model turn, a
  * shadowed sibling.

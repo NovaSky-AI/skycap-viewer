@@ -1,6 +1,5 @@
 // The viewer's server: the page's static files, and a small read API over
-// skycap record directories, in the shapes of inference-capture's /v1 so the
-// front end ports without a second vocabulary. It only reads files; anything
+// skycap record directories under /v1. It only reads files; anything
 // on screen can be fetched with curl.
 //
 //   GET /healthz                                  {status, source: "record", record}

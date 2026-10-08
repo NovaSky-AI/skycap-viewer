@@ -3,8 +3,8 @@
 // A group is keyed by values from each trajectory's meta (or annotations),
 // `step` + `instance_id` by default. It is within one step and dense by
 // construction -- every rollout of the prompt is in it -- which is why it is a
-// unit here while `task x step` is not (inference-capture's
-// design/run-dimensions.md): cross-step stays a filter.
+// unit here while `task x step` is not (the same task isn't sampled at every
+// step, so a grid would be mostly empty): cross-step stays a filter.
 //
 // Within a group, a *repetition* is one rollout slot (`repetition_id`). A
 // harness that retries a repetition writes a new trajectory with a higher

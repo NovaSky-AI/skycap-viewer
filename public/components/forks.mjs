@@ -1,4 +1,4 @@
-/** Two paths, compared from the last node they agree on (viewer.md, R7).
+/** Two paths, compared from the last node they agree on.
  *
  * The tree says *that* there was a branch; this says *where* the histories
  * stopped matching, which is the harness's behaviour and regularly a surprise
@@ -11,9 +11,8 @@
  * exactly one path. skycap builds its rows so that it is, and this is where
  * that is verified rather than assumed.
  *
- * inference-capture's current viewer folded this tab into the tree's node
- * panel; viewer.md still describes it. Both are here: the tree reads a fork at
- * the node, this reads two whole rows against each other.
+ * The tree also reads a fork, at the node; this reads two whole rows against
+ * each other.
  */
 
 import { h, mount } from '../lib/dom.mjs';

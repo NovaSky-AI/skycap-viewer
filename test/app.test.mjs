@@ -1,8 +1,7 @@
 /** Boot the whole viewer, through the dom-shim, against this viewer's own
  * server over the fixture records, and drive it the way a person does: land
- * on a run, filter it, open a trajectory by its link. Ported from
- * inference-capture's app test; `fetch` goes to a real server here instead of
- * a table of canned responses.
+ * on a run, filter it, open a trajectory by its link. `fetch` goes to a real
+ * server, not a table of canned responses.
  */
 
 import { test, before, after } from 'node:test';

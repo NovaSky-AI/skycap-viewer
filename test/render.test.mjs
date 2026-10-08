@@ -1,9 +1,8 @@
 /** Render every view through the dom-shim, against payloads this viewer's own
  * server returns for real records (test/fixtures: Harbor runs, and records the
- * Python writer produced for the spec's edge cases). Ported from
- * inference-capture's render tests; the payloads are fetched live from the
- * server rather than stored, so a change to the API that a view has not
- * caught up with fails here.
+ * Python writer produced for the spec's edge cases). The payloads are fetched
+ * live from the server rather than stored, so a change to the API that a view
+ * has not caught up with fails here.
  */
 
 import { test, before, after } from 'node:test';

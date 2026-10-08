@@ -1,6 +1,5 @@
-// What the page reads: skycap records turned into the reference viewer's /v1
-// shapes (inference-capture/viewer), so the front end ports without a second
-// vocabulary. Everything here is derived from one record's files.
+// What the page reads: skycap records turned into the /v1 shapes the front end
+// renders. Everything here is derived from one record's files.
 //
 // Paths are cut into blocks on the mask *and* the node (turn) boundary:
 //
