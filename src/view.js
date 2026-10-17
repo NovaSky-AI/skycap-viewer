@@ -19,6 +19,7 @@
 
 import { basename } from 'node:path';
 import { bridgedState, graphOf, nodeTokens, renderSigns, sidecarProblems } from './record.js';
+import { forksOf } from './forks.js';
 
 export const nodeKey = (id) => (id == null ? null : `n${id}`);
 export const iso = (t) => (typeof t === 'number' && Number.isFinite(t) ? new Date(t * 1000).toISOString() : null);
@@ -229,9 +230,10 @@ export function pathsOf(doc, tokens, { text = true } = {}) {
   return { trajectory: doc.id, mode, text_only: textOnly, tokenizer: doc.capture?.tokenizer ?? null, paths };
 }
 
-/** The `/graph` payload: one entry per node, plus leaves and branch points. */
+/** The `/graph` payload: one entry per node, plus leaves and branch points. A node that starts a new branch says why it forked. */
 export function graphPayload(doc) {
   const g = graphOf(doc);
+  const forks = new Map(forksOf(doc).map((f) => [f.node, { sibling_node_id: nodeKey(f.sibling), kind: f.kind, detail: f.detail }]));
   const signs = renderSigns(doc);
   const absent = doc.nodes.some((n) => (n.calls ?? []).some((c) => bridgedState(c) === 'absent'));
   const inferred = new Set(absent ? signs.inferred_unbridged : []);
@@ -262,6 +264,7 @@ export function graphPayload(doc) {
           inferred_unbridged: inferred.has(n.id),
           retokenized: retokenized.has(n.id),
         },
+        fork: forks.get(n.id) ?? null,
         message: n.message,
       };
     }),

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // skycap-viewer <dir>... [--port N] [--host H]       serve the viewer; each dir is a record
 //                                                    directory or a parent of several (runs)
-// skycap-viewer summary <record-dir>... [--json]     per-directory statistics
+// skycap-viewer summary <record-dir>... [--json]     per-directory statistics, with the cause of each fork
 // skycap-viewer check <record-dir>... [--sidecars]   check documents (and tokens sidecars) against format.md
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -9,7 +9,8 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { RecordDirectory } from '../src/directory.js';
 import { directoryStats, formatStats } from '../src/stats.js';
-import { check, documentPath, listIds, readDocument, readSidecar, zstdFrames } from '../src/record.js';
+import { check, documentPath, listIds, readDocument, readSidecar, summarize, zstdFrames } from '../src/record.js';
+import { forksOf } from '../src/forks.js';
 import { createViewer } from '../src/server.js';
 
 const USAGE = `usage:
@@ -61,7 +62,9 @@ if (command === 'summary') {
   const out = [];
   for (const dir of dirs(positionals)) {
     const t0 = Date.now();
-    const { rows, errors } = await new RecordDirectory(dir).summaries();
+    // Each row carries its forks, so the stats can say why the histories diverged.
+    const index = new RecordDirectory(dir, { summarize: (doc) => ({ ...summarize(doc), forks: forksOf(doc) }) });
+    const { rows, errors } = await index.summaries();
     const stats = directoryStats(rows, errors);
     if (values.json) out.push({ dir, stats, errors });
     else {

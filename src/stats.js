@@ -18,6 +18,7 @@ export function directoryStats(rows, errors = []) {
     paths: { total: 0, histogram: {}, max: null },
     forked: 0,
     branch_points: 0,
+    fork_kinds: {},
     bridged: { true: 0, false: 0, null: 0, absent: 0 },
     with_unbridged: 0,
     with_bridged_absent: 0,
@@ -46,6 +47,7 @@ export function directoryStats(rows, errors = []) {
     if (!s.paths.max || r.paths > s.paths.max.paths) s.paths.max = { paths: r.paths, id: r.id };
     if (r.paths > 1) s.forked++;
     s.branch_points += r.branch_points;
+    for (const f of r.forks ?? []) inc(s.fork_kinds, f.kind);
     for (const [k, v] of Object.entries(r.bridged)) inc(s.bridged, k, v);
     if (r.bridged.false > 0) s.with_unbridged++;
     if (r.bridged.absent > 0) s.with_bridged_absent++;
@@ -99,6 +101,7 @@ export function formatStats(dir, s) {
   const hist = Object.entries(s.paths.histogram).sort((a, b) => a[0] - b[0]).map(([k, v]) => `${k}:${v}`).join(' ');
   add('paths per trajectory', `${hist}  (total ${s.paths.total}${s.paths.max ? `, max ${s.paths.max.paths} in ${s.paths.max.id}` : ''})`);
   add('forked (paths > 1)', `${s.forked}${pct(s.forked, s.trajectories)}, ${s.branch_points} branch points`);
+  if (s.branch_points) add('fork causes', Object.entries(s.fork_kinds).map(([k, v]) => `${k}=${v}`).join(' ') || 'none found');
   add('calls by bridged', `true=${s.bridged.true} false=${s.bridged.false} null=${s.bridged.null} absent=${s.bridged.absent}`);
   add('with unbridged calls', `${s.with_unbridged}${pct(s.with_unbridged, s.trajectories)}`);
   if (s.with_bridged_absent) add('bridged field absent', `${s.with_bridged_absent} trajectories (written before the field existed: unknown)`);

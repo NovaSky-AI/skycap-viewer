@@ -149,6 +149,9 @@ test('graph and exchanges', async () => {
   assert.equal(graph.branch_points.length, 20);
   assert.ok(graph.nodes.find((n) => n.node_id === 'n24').signs.retokenized);
   assert.equal(graph.nodes.find((n) => n.node_id === 'n24').shadowed_by, 'n1');
+  assert.deepEqual(graph.nodes.find((n) => n.node_id === 'n24').fork, { sibling_node_id: 'n1', kind: 're-rendered', detail: 'the same message, rendered to different tokens' });
+  assert.equal(graph.nodes.find((n) => n.node_id === 'n1').fork, null);
+  assert.equal(graph.nodes.filter((n) => n.fork).length, graph.branch_points.length);
   const calls = await json('/v1/trajectories/tr_forked_unbridged/exchanges?run_id=spec');
   assert.deepEqual(calls.data.map((c) => c.bridged), [null, false, false]);
   const failed = await json('/v1/trajectories/tr_tokens/exchanges');
