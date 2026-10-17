@@ -40,9 +40,11 @@ Columns sort on click, and the view, filters and sort live in the URL, so a link
 **A rollout** opens in a side drawer:
 
 - **Path:** the conversation as the model saw it, cut into blocks: what the model sampled and trained on, the chat template's scaffolding, the inputs it was given, and replayed text it didn't produce. Hover a token for its id and logprob.
-- **Tree:** every message as a node. Forks are marked, and opening a branch point shows its branches side by side.
+- **Tree:** every message as a node. Forks are marked, the first node of each branch says why the history forked there, and opening a branch point shows its branches side by side.
 - **Forks:** pick two paths and compare them from the last message they share.
 - **Calls:** each model call behind the rollout, with timing, token counts and how it ended.
+
+A fork's cause is one of `resample` (the model replied again to a history it had already answered), `edited reply` (the harness sent back a model reply with fields changed, such as stripped reasoning), `re-rendered` (token mode: the same message, but its render didn't reproduce the sampled tokens), `different message` (a compaction, a subagent, a rewritten turn) or `tools or model` (the same message sent with another tool set or model, which starts a new root). It is read by comparing the branch's first node with the earlier sibling it should have matched.
 
 **Health flags** sit in a band above the table; click one to filter to it. Among them:
 
@@ -63,9 +65,11 @@ The viewer shows records, not training curves: rewards appear as they were recor
 
 ```sh
 skycap-viewer <dir>... [--port 8765] [--host 127.0.0.1]   # serve the viewer
-skycap-viewer summary <dir>...                            # a quick text summary of each run
+skycap-viewer summary <dir>... [--json]                   # a quick text summary of each run, with the cause of each fork
 skycap-viewer check <dir>...                              # validate records against skycap's format
 ```
+
+`summary --json` is for scripts: a harness whose history should stay on one path can be gated on `stats.forked == 0`, and `stats.fork_kinds` says what kind of fork it made when it didn't.
 
 ## Record format
 

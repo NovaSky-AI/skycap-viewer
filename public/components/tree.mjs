@@ -21,7 +21,8 @@
  * conversation off the right edge), and each node carries what the record says about how
  * its prompt was made -- `unbridged` (bridged=false), the inferred re-render
  * for records without the field, a re-tokenized copy of a model turn, a
- * shadowed sibling.
+ * shadowed sibling -- and, on the first node of a new branch, why the history
+ * forked there (`fork`: its kind, against the sibling it should have matched).
  */
 
 import { h, mount } from '../lib/dom.mjs';
@@ -106,6 +107,7 @@ function signBadges(node) {
   if (s.retokenized) out.push(h('span', { class: 'badge warn', title: 'the same message as a model sibling, tokenized differently: the prompt was re-rendered' }, `re-tokenized copy of ${node.shadowed_by}`));
   else if (node.shadowed_by) out.push(h('span', { class: 'badge', title: 'a sibling with the same match hash, which history matching prefers' }, `shadowed by ${node.shadowed_by}`));
   if ((node.calls || []).length > 1) out.push(h('span', { class: 'badge', title: 'identical outputs, one node' }, `×${node.calls.length} calls`));
+  if (node.fork) out.push(h('span', { class: 'badge warn', title: `${node.fork.detail} (against ${node.fork.sibling_node_id})` }, `fork: ${node.fork.kind}`));
   return out;
 }
 

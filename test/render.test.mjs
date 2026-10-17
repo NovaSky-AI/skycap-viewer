@@ -226,12 +226,14 @@ test('the tree says how a node\'s prompt was made', () => {
   renderTree(root, { graph: forked().graph, paths: forked().paths, state: STATE, onState() {} });
   assert.match(root.textContent, /re-tokenized copy of n1/);
   assert.match(root.textContent, /unbridged \(inferred\)/);
+  assert.equal(root.findAll((node) => node.hasClass('badge') && node.textContent === 'fork: re-rendered').length, forked().graph.branch_points.length, 'the first node of each branch says why it forked');
   root = el();
   const { graph, paths } = payload.tr_forked_unbridged;
   renderTree(root, { graph, paths, state: { ...STATE, openNode: 'n4' }, onState() {} });
   // n4 and n7 in the tree, and n4 again in its opened panel.
   assert.equal(root.findAll((node) => node.hasClass('badge') && node.textContent === 'unbridged').length, 3);
   assert.match(root.textContent, /bridged false/);
+  assert.equal(root.findAll((node) => node.hasClass('badge') && node.textContent === 'fork: edited reply').length, 2);
 });
 
 test('train-once is checked, not assumed, and a violation is reported', () => {
